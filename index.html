@@ -431,10 +431,18 @@
 
   <div class="lab">Activity log</div>
   <p style="margin-bottom:9px" id="logcount">No activity recorded yet.</p>
+  <p style="margin-bottom:9px" id="ghstate">Not sending yet.</p>
   <div class="stack">
+    <button class="btn" id="send-log">Send log now</button>
     <button class="btn" id="exp-log">Export activity log</button>
     <button class="btn" id="clr-log">Clear the log</button>
   </div>
+
+  <div class="row" style="margin-top:8px">
+    <input id="gh-token" type="password" placeholder="Paste a GitHub token" autocomplete="off" aria-label="GitHub token">
+    <button class="btn" id="gh-save">Save</button>
+  </div>
+  <p class="hint">Only needed once per device. If the Shopping app already has a token on this device, Notes uses that one.</p>
 
   <div class="lab">Start over</div>
   <p style="margin-bottom:9px">Wipes this app's data on every device.</p>
@@ -443,7 +451,7 @@
   <div class="lab">Links</div>
   <div class="stack" id="links"></div>
 
-  <p class="buildstamp" id="build">Build 2</p>
+  <p class="buildstamp" id="build">Build 3</p>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
@@ -456,7 +464,7 @@ const APP={
   title:   'Notes',               // shown in the header
   key:     'notes-v1',            // local storage key, unique per app
   dbPath:  'notes/main',          // Firebase branch, unique per app
-  build:   'Build 2 · 24 Nov 2026',
+  build:   'Build 3 · 24 Nov 2026',
   links:[                         // shown in settings
     {label:'Stored data',       url:'https://console.firebase.google.com/project/shopping-eb9b3/database/shopping-eb9b3-default-rtdb/data/~2Fnotes~2Fmain'},
     {label:'Firebase console',  url:'https://console.firebase.google.com/project/shopping-eb9b3/overview'},
@@ -1401,11 +1409,9 @@ function log(kind,detail){
   const e={t:Math.max(Date.now(),last),k:kind,d:detail===undefined?'':String(detail)};   // the record never runs backwards
   actlog.push(e);
   if(actlog.length>LOG_MAX+300){ const drop=actlog.length-LOG_MAX; actlog=actlog.slice(drop); logBase+=drop; }
-  shipLog(e);
   clearTimeout(logT); logT=setTimeout(flushLog,1500);        // a burst of taps is one write
 }
 function flushLog(){ clearTimeout(logT); try{ STORE.set(LOG_KEY,packLog(actlog)); }catch(e){} }
-function shipLog(e){}                                         // live sending plugs in here
 const secs=ms=>ms<1000?Math.round(ms)+'ms':ms<60000?(ms/1000).toFixed(1)+'s':ms<3600000?Math.round(ms/60000)+'m':(ms/3600000).toFixed(1)+'h';
 const clip=(v,n)=>{ v=String(v).replace(/\s+/g,' ').trim(); return v.length>n?v.slice(0,n)+'…':v; };
 const devLabel=()=>{
@@ -1516,6 +1522,71 @@ function logText(){
     +actlog.map((e,i)=>'#'+String(logBase+i).padStart(6,'0')+'  '+stamp(e.t)+'  '+e.k.padEnd(11)+'  '+e.d).join('\n')+'\n';
 }
 
+/* ---- sending the log to the private GitHub repo ----
+   Goes out by itself whenever the app is left, and every few minutes while it
+   is open, so nothing has to be exported. One token per device, shared by every
+   app on this site: it is read from this app's own key, or from the Shopping
+   app's. Each app writes under its own folder in the repo. */
+const GH_KEY=APP.key+'-gh', GH_META_KEY=APP.key+'-ghmeta', GH_SHARED_KEY='shop-gh-1', GH_SHARED_REPO_KEY='shop-ghrepo-1';
+const GH_FOLDER=APP.dbPath.split('/')[0];
+let ghTok='', ghRepo='Eli-Meyer42/shopping-logs', ghFrom='', ghMeta={n:0,okAt:0}, ghBusy=false, ghState='';
+const b64=str=>btoa(unescape(encodeURIComponent(str)));
+const unsentCount=()=>Math.max(0,logBase+actlog.length-Math.max(ghMeta.n,logBase));
+async function ghLoad(){
+  try{ ghTok=(await STORE.get(GH_KEY))||''; ghFrom=ghTok?'this app':''; }catch(e){}
+  if(!ghTok){ try{ ghTok=(await STORE.get(GH_SHARED_KEY))||''; ghFrom=ghTok?'the Shopping app':''; }catch(e){} }
+  try{ const r=await STORE.get(GH_SHARED_REPO_KEY); if(r&&/^[\w.-]+\/[\w.-]+$/.test(r)) ghRepo=r; }catch(e){}
+  try{ const m=JSON.parse((await STORE.get(GH_META_KEY))||'null'); if(m&&typeof m==='object') ghMeta={n:+m.n||0,okAt:+m.okAt||0}; }catch(e){}
+  log('send-setup',ghTok?'token found (from '+ghFrom+'), sending to '+ghRepo+'/'+GH_FOLDER:'no token on this device, log stays here');
+  ghPaint();
+}
+function ghPaint(){
+  const el=$('ghstate'); if(!el) return;
+  const when=ghMeta.okAt?fmtDate(ghMeta.okAt):'never';
+  el.textContent=!ghTok?'Not sending: no GitHub token on this device. Paste one below.'
+    :(ghState||('Sending to '+ghRepo+'. Last sent '+when+'. '+plural(unsentCount(),'entry','entries')+' waiting.'));
+}
+const ghPath=from=>GH_FOLDER+'/logs/'+(devId||'unknown')+'/b'+String(Math.floor(from/20000)).padStart(3,'0')+'/n'+String(from).padStart(9,'0')+'.json';
+async function sendLog(manual,keepalive){
+  if(!ghTok){ if(manual) flash('Paste a GitHub token first.'); return; }
+  if(ghBusy){ if(manual) flash('Already sending.'); return; }
+  const lost=Math.max(0,logBase-ghMeta.n), from=Math.max(ghMeta.n,logBase);
+  const batch=actlog.slice(from-logBase,from-logBase+(keepalive?300:4000));
+  if(!batch.length){ ghState=''; ghPaint(); if(manual) flash('Nothing new since the last send.'); return; }
+  const to=from+batch.length-1, more=actlog.length-(from-logBase)>batch.length;
+  const live=data.notes.filter(n=>!n.archived&&!n.trashed);
+  const body={app:APP.title,build:APP.build,device:devLabel(),agent:navigator.userAgent,sentAt:new Date().toISOString(),from:from,to:to,lost:lost,
+    covers:[new Date(batch[0].t).toISOString(),new Date(batch[batch.length-1].t).toISOString()],
+    notes:live.length,unsorted:live.filter(n=>!typeOf(n)).length,
+    rules:liveRules().map((r,i)=>(i+1)+'. '+(r.on?'':'(off) ')+ruleText(r)+' -> '+((typeById(r.type)||{name:'?'}).name)),
+    entries:batch.map(e=>[e.t,e.k,e.d])};
+  ghBusy=true; ghState='Sending '+batch.length+'…'; ghPaint();
+  let again=false;
+  try{
+    const url='https://api.github.com/repos/'+ghRepo+'/contents/'+ghPath(from);
+    const r=await fetch(url,{method:'PUT',keepalive:!!keepalive,headers:{Authorization:'Bearer '+ghTok,Accept:'application/vnd.github+json'},
+      body:JSON.stringify({message:'log: '+APP.title+' entries '+from+'–'+to+' from '+devId,content:b64(JSON.stringify(body))})});
+    if(r.ok){
+      ghMeta={n:to+1,okAt:Date.now()}; STORE.set(GH_META_KEY,JSON.stringify(ghMeta)); ghState='';
+      log('send','entries #'+from+'–#'+to+(lost?' ('+lost+' older ones were lost before sending)':''));
+      if(manual) flash('Log sent: '+plural(batch.length,'entry','entries')+'.');
+      again=more&&!keepalive;
+    }else if(r.status===422||r.status===409){            // that file is already there: an earlier send landed without us hearing back
+      let upto=to;
+      try{ const g=await fetch(url,{headers:{Authorization:'Bearer '+ghTok,Accept:'application/vnd.github.raw+json'},cache:'no-store'}); if(g.ok){ const j=await g.json(); if(+j.to>=from) upto=+j.to; } }catch(e){}
+      ghMeta={n:upto+1,okAt:Date.now()}; STORE.set(GH_META_KEY,JSON.stringify(ghMeta)); ghState='';
+      log('send','#'+from+'–#'+upto+' were already there, carrying on after them'); again=!keepalive&&unsentCount()>0;
+    }else{
+      const why=r.status===401?'the token was refused (expired or revoked)':r.status===404||r.status===403?'the token cannot write to '+ghRepo:'GitHub answered '+r.status;
+      ghState='Not sent: '+why+'.'; log('send-fail',why); if(manual) flash(ghState);
+    }
+  }catch(e){ ghState='Not sent: no connection. It will try again.'; log('send-fail','network: '+(e&&e.message||'?')); if(manual) flash(ghState); }
+  ghBusy=false; ghPaint();
+  if(again) sendLog(manual,false);
+}
+document.addEventListener('visibilitychange',()=>{ if(document.hidden&&ghTok&&unsentCount()) sendLog(false,true); });
+setInterval(()=>{ if(!document.hidden&&ghTok&&unsentCount()>=15) sendLog(false,false); },3*60*1000);
+
 /* ---- shape: every saved or synced copy goes through here ---- */
 const HEX=/^#[0-9a-fA-F]{6}$/;
 const arr=v=>Array.isArray(v)?v.filter(x=>x!=null):(v&&typeof v==='object'?Object.keys(v).map(k=>v[k]).filter(x=>x!=null):[]);
@@ -1590,6 +1661,8 @@ async function load(){
   cloudStart();
   draw();
   logOpen();
+  await ghLoad();
+  if(ghTok&&unsentCount()>40) sendLog(false,false);
   const go=new URLSearchParams(location.search);          // home-screen shortcuts: ?new=1 and ?voice=1
   if(go.has('new')||go.has('voice')){
     try{ history.replaceState(null,'',location.pathname); }catch(e){}
@@ -1679,7 +1752,7 @@ function drawLinks(){
   $('logcount').textContent=actlog.length
     ? actlog.length+' of '+LOG_MAX+' entries, '+Math.round(packLog(actlog).length/1024)+' KB, on device '+devId+'.' : 'No activity recorded yet.';
 }
-$('gear').addEventListener('click',()=>{ drawLinks(); drawPrefs(); wipeDisarm(); show('sheet-set'); $('sheet-set').scrollTop=0; });
+$('gear').addEventListener('click',()=>{ drawLinks(); drawPrefs(); ghPaint(); wipeDisarm(); show('sheet-set'); $('sheet-set').scrollTop=0; });
 
 function download(name,text,type){
   const a=document.createElement('a');
@@ -1713,6 +1786,14 @@ $('imp-file').addEventListener('change',e=>{
     flash('Backup restored. '+plural(Math.max(0,data.notes.length-had),'note','notes')+' brought back.');
   }catch(err){ flash('That file could not be read.'); } };
   r.readAsText(f); e.target.value='';
+});
+$('send-log').addEventListener('click',()=>sendLog(true,false));
+$('gh-save').addEventListener('click',async()=>{
+  const t=$('gh-token').value.trim(); $('gh-token').value='';
+  if(!t){ flash('Paste the token into the box first.'); return; }
+  ghTok=t; ghFrom='this app'; ghState='';
+  try{ await STORE.set(GH_KEY,t); }catch(e){}
+  log('send-setup','token saved on this device'); ghPaint(); sendLog(true,false);
 });
 $('exp-log').addEventListener('click',()=>{
   if(!actlog.length){ flash('Nothing in the log yet.'); return; }
