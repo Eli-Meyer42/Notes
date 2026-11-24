@@ -443,7 +443,7 @@
   <div class="lab">Links</div>
   <div class="stack" id="links"></div>
 
-  <p class="buildstamp" id="build">Build 1</p>
+  <p class="buildstamp" id="build">Build 2</p>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
@@ -456,7 +456,7 @@ const APP={
   title:   'Notes',               // shown in the header
   key:     'notes-v1',            // local storage key, unique per app
   dbPath:  'notes/main',          // Firebase branch, unique per app
-  build:   'Build 1 · 24 Nov 2026',
+  build:   'Build 2 · 24 Nov 2026',
   links:[                         // shown in settings
     {label:'Stored data',       url:'https://console.firebase.google.com/project/shopping-eb9b3/database/shopping-eb9b3-default-rtdb/data/~2Fnotes~2Fmain'},
     {label:'Firebase console',  url:'https://console.firebase.google.com/project/shopping-eb9b3/overview'},
@@ -617,6 +617,7 @@ function toggleLine(id,i){
   const n=noteById(id); if(!n||n.trashed) return;
   const lines=n.text.split('\n'), c=parseCheck(lines[i]||''); if(!c) return;
   lines[i]=c.flip; n.text=lines.join('\n'); n.updated=Date.now();
+  log('note-tick',(c.done?'unticked':'ticked')+' "'+clip(c.text,40)+'"');
   save(); draw();
 }
 
@@ -649,6 +650,7 @@ function draw(){
   if(ui.view==='rules') drawRules(); else if(ui.view==='archive') drawArchive(); else drawNotes();
   if(openId==='sheet-note') fillNote(false);
   if(openId==='sheet-labels') drawLabels();
+  logView();
 }
 function drawChrome(){
   $('apptitle').textContent=ui.view==='rules'?'Rules':ui.view==='archive'?'Archive':APP.title;
@@ -835,17 +837,19 @@ function moveRule(id,dir){
 /* ============================================================
    SHEETS — one open at a time. The phone's back button closes it.
    ============================================================ */
-let openId=null;
+let openId=null, sheetAt=0;
 const onClose={};
 function show(id){
   if(openId===id) return;
   if(openId){                                  // swap one sheet for another
     $(openId).classList.remove('on'); const was=openId; openId=id; $(id).classList.add('on');
+    log('sheet','closed '+was.replace('sheet-','')+' after '+secs(Date.now()-sheetAt)+', opened '+id.replace('sheet-','')); sheetAt=Date.now();
     if(onClose[was]) onClose[was]();
     try{ history.replaceState({sheet:id},''); }catch(e){}
     return;
   }
   openId=id; $('scrim').classList.add('on'); $(id).classList.add('on'); document.body.classList.add('sheet-open');
+  sheetAt=Date.now(); log('sheet','opened '+id.replace('sheet-',''));
   try{ history.pushState({sheet:id},''); }catch(e){}
 }
 function hideSheet(){
@@ -854,6 +858,7 @@ function hideSheet(){
   $(id).classList.remove('on'); $('scrim').classList.remove('on'); document.body.classList.remove('sheet-open');
   if(document.activeElement&&$(id).contains(document.activeElement)) document.activeElement.blur();
   disarm();
+  log('sheet','closed '+id.replace('sheet-','')+' after '+secs(Date.now()-sheetAt));
   if(onClose[id]) onClose[id]();
 }
 function closeSheets(){
@@ -905,6 +910,7 @@ function drawComposer(){
   if(st.dataset.k!==chip){                     // only re-stamp when the answer changes
     st.dataset.k=chip; st.innerHTML=chip;
     if(st.firstElementChild) st.firstElementChild.classList.add('pop');
+    if(chip) log('stamp',st.textContent+' · '+why);
   }
   $('new-why').textContent=why;
   $('new-types').innerHTML=pickHTML('new-type','auto','Let the rules decide',!hand,'auto')+
@@ -916,7 +922,8 @@ function saveComposer(){
   savedAt=Date.now();
   const n=addNote(text,voiceUsed?'voice':'typed',cmpHand), t=typeOf(n);
   save(); setDraft(''); ta.value='';
-  log('note-add',(t?t.name:'Unsorted')+' by '+(n.typeBy||'no rule')+', '+n.src+', '+text.length+' chars');
+  const rn=liveRules().findIndex(r=>r.id===n.rule);
+  log('note-add','"'+clip(text,60)+'" → '+typeName(n)+' · '+(n.typeBy==='rule'?'rule '+(rn+1)+' ('+ruleText(liveRules()[rn])+')':n.typeBy==='hand'?'picked by hand':'no rule matched')+' · '+n.src+' · '+text.length+' chars');
   ui.view='notes';                             // make sure the new note is on screen
   if(ui.tab!=='all'&&ui.tab!==(t?t.id:'unsorted')) ui.tab='all';
   if(ui.label&&!n.labels.includes(ui.label)) ui.label='';
@@ -961,13 +968,13 @@ function spawnRec(){
       if(fin.trim()){
         const ta=$('new-text'), base=ta.value;
         ta.value=base+(base&&!/\s$/.test(base)?' ':'')+fin.trim();
-        heardAny=true; voiceUsed=true; draft=ta.value; growTA(ta); drawComposer();
+        log('voice','heard "'+clip(fin,60)+'"'); heardAny=true; voiceUsed=true; draft=ta.value; growTA(ta); drawComposer();
         try{ STORE.set(DRAFT_KEY,draft); }catch(err){}
       }
       $('new-interim').textContent=mid; $('new-interim').hidden=!mid;
     };
     rec.onerror=e=>{
-      const err=e&&e.error;
+      const err=e&&e.error; log('voice-error',err||'?');
       if(err==='not-allowed'||err==='service-not-allowed'){ stopVoice(false); flash('The microphone is blocked. Allow it in the browser’s site settings.'); }
       else if(err==='network'){ stopVoice(false); flash('Dictation needs a connection.'); }
       else if(err==='audio-capture'){ stopVoice(false); flash('No microphone was found.'); }
@@ -989,6 +996,7 @@ document.addEventListener('visibilitychange',()=>{ if(document.hidden) stopVoice
 let cur=null, curOpenText='', noteT=null;
 function openNote(id){
   const n=noteById(id); if(!n) return;
+  log('note-open','"'+clip(n.text,40)+'" · '+typeName(n)+' · '+whyText(n)+' · '+n.text.length+' chars'+(n.pinned?' · pinned':'')+(n.archived?' · archived':'')+(n.trashed?' · in trash':''));
   cur=id; curOpenText=n.text; $('note-text').value=n.text;
   $('note-newlabel-row').hidden=true; $('note-newlabel').value='';
   disarm(); show('sheet-note'); fillNote(true); $('sheet-note').scrollTop=0;
@@ -1032,8 +1040,10 @@ function commitNoteText(){
   const n=noteById(cur); if(!n||n.trashed) return false;
   const v=$('note-text').value;
   if(v===curOpenText||!v.trim()) return false;
+  const was=typeName(n), len=n.text.length;
   n.text=v; curOpenText=v; n.updated=Date.now();
   if(!typeOf(n)&&n.typeBy!=='hand') fileByRule(n,classify(v));
+  log('note-edit','"'+clip(v,60)+'" · '+len+' → '+v.length+' chars'+(typeName(n)!==was?' · re-filed '+was+' → '+typeName(n):''));
   save(); return true;
 }
 function flagNote(id,patch,msg){
@@ -1052,6 +1062,7 @@ function setNoteType(id){
 function toggleNoteLabel(id){
   const n=noteById(cur); if(!n||n.trashed||!labelById(id)) return;
   commitNoteText();
+  log('note-label',(n.labels.includes(id)?'removed ':'added ')+labelById(id).name);
   n.labels=n.labels.includes(id)?n.labels.filter(x=>x!==id):n.labels.concat([id]);
   n.updated=Date.now(); save(); fillNote(false);
 }
@@ -1076,13 +1087,14 @@ $('note-rerun').addEventListener('click',()=>{
   const n=noteById(cur); if(!n||n.trashed) return;
   commitNoteText();
   const c=classify(n.text); fileByRule(n,c); n.updated=Date.now(); save(); fillNote(false);
+  log('note-rerun','"'+clip(n.text,40)+'" → '+typeName(n)+(c?' by rule '+c.n:''));
   flash(c?'Rule '+c.n+' files this as '+c.type.name+'.':'No rule matches, so it stays Unsorted.');
 });
 $('note-newlabel-add').addEventListener('click',addNoteLabel);
 $('note-newlabel').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); addNoteLabel(); } });
 $('note-pin').addEventListener('click',()=>{
   const n=noteById(cur); if(!n) return;
-  commitNoteText(); n.pinned=!n.pinned; n.updated=Date.now(); save(); fillNote(false);
+  commitNoteText(); n.pinned=!n.pinned; n.updated=Date.now(); log('note-pin',n.pinned?'pinned':'unpinned'); save(); fillNote(false);
 });
 $('note-arch').addEventListener('click',()=>{
   const n=noteById(cur); if(!n) return;
@@ -1370,21 +1382,138 @@ const STORE=(()=>{
   };
 })();
 
-/* ---- activity log (local only, never synced; records what happened, not what the notes say) ---- */
-const LOG_KEY=APP.key+'-log', LOG_MAX=600;
-let actlog=[];
-function log(kind,detail){
-  actlog.push({t:Date.now(),k:kind,d:detail===undefined?'':String(detail)});
-  if(actlog.length>LOG_MAX) actlog=actlog.slice(-LOG_MAX);
-  try{ STORE.set(LOG_KEY,JSON.stringify(actlog)); }catch(e){}
+/* ---- activity log ----
+   Records everything: every tap, what the app did about it, what was on screen,
+   typing, sessions, sync, and anything that breaks. Never part of the synced
+   state (that whole blob is rewritten on every save). Stored packed, and every
+   entry has a number that only goes up, so a gap proves something is missing. */
+const LOG_KEY=APP.key+'-log', DEV_KEY=APP.key+'-dev', LOG_MAX=12000;
+let actlog=[], logT=null, devId='', logBase=0;
+const packLog=a=>{ let p=0; return JSON.stringify({b:logBase,e:a.map(e=>{ const d=e.t-p; p=e.t; return [d,e.k,e.d]; })}); };
+function unpackLog(str){
+  const raw=JSON.parse(str)||[], list=Array.isArray(raw)?raw:(raw.e||[]);
+  logBase=Array.isArray(raw)?0:(raw.b||0);
+  let p=0;
+  return list.map(e=>Array.isArray(e)?(p+=e[0],{t:p,k:e[1],d:e[2]||''}):(p=e.t,{t:e.t,k:e.k,d:e.d||''}));
 }
+function log(kind,detail){
+  const last=actlog.length?actlog[actlog.length-1].t:0;
+  const e={t:Math.max(Date.now(),last),k:kind,d:detail===undefined?'':String(detail)};   // the record never runs backwards
+  actlog.push(e);
+  if(actlog.length>LOG_MAX+300){ const drop=actlog.length-LOG_MAX; actlog=actlog.slice(drop); logBase+=drop; }
+  shipLog(e);
+  clearTimeout(logT); logT=setTimeout(flushLog,1500);        // a burst of taps is one write
+}
+function flushLog(){ clearTimeout(logT); try{ STORE.set(LOG_KEY,packLog(actlog)); }catch(e){} }
+function shipLog(e){}                                         // live sending plugs in here
+const secs=ms=>ms<1000?Math.round(ms)+'ms':ms<60000?(ms/1000).toFixed(1)+'s':ms<3600000?Math.round(ms/60000)+'m':(ms/3600000).toFixed(1)+'h';
+const clip=(v,n)=>{ v=String(v).replace(/\s+/g,' ').trim(); return v.length>n?v.slice(0,n)+'…':v; };
+const devLabel=()=>{
+  const u=navigator.userAgent;
+  const os=/Android/.test(u)?'Android':/iPhone|iPad|iPod/.test(u)?'iOS':/Windows/.test(u)?'Windows':/Mac OS/.test(u)?'Mac':/Linux/.test(u)?'Linux':'other';
+  let how='browser';
+  try{ if(matchMedia('(display-mode: standalone)').matches) how='installed'; }catch(e){}
+  return devId+' · '+os+' · '+how;
+};
+const typeName=n=>{ const t=typeOf(n); return t?t.name:'Unsorted'; };
+function where(){
+  const tab=ui.tab==='all'?'All':ui.tab==='unsorted'?'Unsorted':(typeById(ui.tab)||{name:'?'}).name;
+  const l=ui.label?labelById(ui.label):null;
+  return '  ['+ui.view+(ui.view==='notes'?'/'+tab:ui.view==='archive'?'/'+ui.arch:'')+(l?' · label '+l.name:'')+(ui.q?' · searching':'')+(openId?' > '+openId.replace('sheet-',''):'')+']';
+}
+/* Every tap, before its handler runs, so the log reads as tap → what the app did. */
+function tapLabel(el){
+  const card=el.closest('.note'), n=card?noteById(card.dataset.id):null;
+  if(n&&el.matches('input[data-line]')) return 'tick box on line '+(+el.dataset.line+1)+' of note "'+clip(n.text,40)+'"';
+  if(n) return 'note "'+clip(n.text,40)+'" ('+typeName(n)+')';
+  const aria=el.getAttribute('aria-label'), t=clip(el.textContent||'',40);
+  if(el.dataset&&el.dataset.act) return el.dataset.act+': '+(aria||t||el.dataset.id||'');
+  if(aria) return aria;
+  return el.id?el.id+(t?' ("'+t+'")':''):(t||el.className||el.tagName.toLowerCase());
+}
+let lastTap=0;
+document.addEventListener('click',e=>{
+  const el=e.target&&e.target.closest?e.target.closest('button,.note,label,input,textarea,select,a,.scrim,.chip'):null;
+  const gap=lastTap?'  (+'+secs(Date.now()-lastTap)+')':''; lastTap=Date.now();
+  if(!el||el.disabled) return log('TAP','background'+where()+gap);
+  log('TAP',tapLabel(el)+where()+gap);
+},true);
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape') log('TAP','Escape key');
+  else if(e.key==='Enter'&&/INPUT|TEXTAREA/.test(e.target.tagName)) log('TAP','Enter in '+(e.target.id||'a text box')+((e.ctrlKey||e.metaKey)?' with Ctrl':''));
+},true);
+document.addEventListener('change',e=>{
+  const el=e.target; if(!el||!el.id) return;
+  if(el.tagName==='SELECT') log('picked',el.id+': '+clip(el.options[el.selectedIndex]?el.options[el.selectedIndex].text:el.value,40));
+  else if(el.type==='checkbox') log('picked',el.id+': '+(el.checked?'on':'off'));
+},true);
+/* typing in any box, including typing that gets abandoned */
+const typing={};
+document.addEventListener('focusin',e=>{ const el=e.target; if(el&&el.id&&/INPUT|TEXTAREA/.test(el.tagName)&&el.type!=='checkbox'&&el.type!=='file') typing[el.id]={n:0,t:Date.now()}; });
+document.addEventListener('input',e=>{ const w=e.target&&typing[e.target.id]; if(w) w.n++; },true);
+document.addEventListener('focusout',e=>{
+  const el=e.target, w=el&&typing[el.id]; if(!w) return;
+  delete typing[el.id]; if(!w.n) return;
+  const v=(el.value||'').trim();
+  log('typing',el.id+': '+plural(w.n,'edit','edits')+' over '+secs(Date.now()-w.t)+(v?', holding "'+clip(v,60)+'" ('+v.length+' chars)':', left empty'));
+});
+/* sessions: opened, left, back, closed, and for how long */
+let openedAt=Date.now(), awayAt=0, leftAt=0;
+const BLIP=1500;            // Android flickers the page hidden and back on launch
+function logOpen(){
+  const live=data.notes.filter(n=>!n.archived&&!n.trashed);
+  log('app','opened · '+APP.build+' · '+devLabel()+' · '+(innerWidth?innerWidth+'×'+innerHeight:'started in the background')+' · '+(navigator.onLine?'online':'offline')+
+    ' · '+plural(live.length,'note','notes')+', '+live.filter(n=>!typeOf(n)).length+' Unsorted, '+plural(liveRules().length,'rule','rules')+', '+plural(liveTypes().length,'type','types')+', '+plural(liveLabels().length,'label','labels'));
+}
+document.addEventListener('visibilitychange',()=>{
+  if(document.hidden){
+    awayAt=Date.now();
+    if(awayAt-openedAt>BLIP){ log('app','left after '+secs(awayAt-openedAt)); leftAt=awayAt; }
+    flushLog();
+  }else{
+    const gone=Date.now()-awayAt;
+    if(!awayAt||gone<BLIP) return;
+    log('app','back after '+secs(gone)+' away'); openedAt=Date.now();
+  }
+});
+addEventListener('pagehide',()=>{ const now=Date.now(); if(now-leftAt>BLIP&&now-openedAt>BLIP) log('app','closed after '+secs(now-openedAt)); flushLog(); });
+addEventListener('online',()=>log('net','back online'));
+addEventListener('offline',()=>log('net','went offline'));
+/* anything that breaks, instead of breaking silently */
+addEventListener('error',e=>log('ERROR',(e.message||'?')+' @ '+String(e.filename||'').split('/').pop()+':'+(e.lineno||'?')));
+addEventListener('unhandledrejection',e=>log('ERROR','unhandled: '+((e.reason&&(e.reason.message||e.reason))||'?')));
+/* what is on screen: logged when the screen, tab, filter or scroll position changes */
+let viewKey='';
+function logView(){
+  const k=[ui.view,ui.tab,ui.arch,ui.label,ui.q?1:0,prefs.layout].join('|');
+  if(k===viewKey) return; viewKey=k;
+  log('view','showing'+where()+' · '+plural(document.querySelectorAll('#main .note').length,'note','notes')+' drawn · '+prefs.layout);
+}
+let scT=null, scLast=0, scN=0;
+addEventListener('scroll',()=>{
+  scN++; clearTimeout(scT);
+  scT=setTimeout(()=>{
+    const max=document.documentElement.scrollHeight-innerHeight, pct=max>0?Math.round(scrollY/max*100):0;
+    if(Math.abs(pct-scLast)<10){ scN=0; return; }
+    let top=null;
+    document.querySelectorAll('#main .note').forEach(c=>{ if(!top&&c.getBoundingClientRect().bottom>130) top=noteById(c.dataset.id); });
+    log('view','scrolled to '+pct+'% ('+plural(scN,'scroll','scrolls')+')'+(top?', top note "'+clip(top.text,30)+'"':''));
+    scLast=pct; scN=0;
+  },600);
+},{passive:true});
 function logText(){
   const p=n=>String(n).padStart(2,'0');
-  const stamp=t=>{const d=new Date(t);
-    return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds());};
+  const stamp=t=>{ const d=new Date(t); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' '+p(d.getHours())+':'+p(d.getMinutes())+':'+p(d.getSeconds()); };
+  const live=data.notes.filter(n=>!n.archived&&!n.trashed);
   return [APP.title+' — activity log','exported: '+stamp(Date.now()),'build: '+APP.build,
-    'entries: '+actlog.length,'agent: '+navigator.userAgent,''.padEnd(60,'-'),''].join('\n')
-    +actlog.map(e=>stamp(e.t)+'  '+e.k.padEnd(14)+'  '+e.d).join('\n')+'\n';
+    'entries: '+actlog.length+' of '+LOG_MAX+', numbered #'+logBase+' to #'+(logBase+actlog.length-1)+'   covering: '+(actlog.length?stamp(actlog[0].t)+' onwards':'nothing yet'),
+    'device: '+devLabel(),'sync: '+($('syncword')?$('syncword').textContent:'?'),
+    'notes: '+live.length+' ('+live.filter(n=>!typeOf(n)).length+' Unsorted), '+data.notes.filter(n=>n.archived&&!n.trashed).length+' archived, '+data.notes.filter(n=>n.trashed).length+' in trash',
+    'types: '+liveTypes().map(t=>t.name).join(', '),'labels: '+(liveLabels().map(l=>l.name).join(', ')||'none'),
+    'rules:',...liveRules().map((r,i)=>'  '+(i+1)+'. '+(r.on?'':'(off) ')+ruleText(r)+' -> '+((typeById(r.type)||{name:'?'}).name)),
+    'speech api: '+(SR?'yes':'no')+'   agent: '+navigator.userAgent,'',''.padEnd(66,'-'),'',
+    'TAP lines are things you did. The lines under each one are what the app did about it.',''].join('\n')
+    +actlog.map((e,i)=>'#'+String(logBase+i).padStart(6,'0')+'  '+stamp(e.t)+'  '+e.k.padEnd(11)+'  '+e.d).join('\n')+'\n';
 }
 
 /* ---- shape: every saved or synced copy goes through here ---- */
@@ -1442,12 +1571,15 @@ async function save(){
   rev=Date.now();
   const ok=await STORE.set(APP.key,JSON.stringify(snap()));
   cloudPush();
+  if(!ok) log('storage','SAVE FAILED: this browser refused the write');
   if(!ok&&!saveWarned){ saveWarned=true; flash('This browser won’t let the app save. Use Export backup before closing.'); }
   return ok;
 }
 async function load(){
   try{ const raw=await STORE.get(APP.key); if(raw) applyState(JSON.parse(raw)); }catch(e){}
-  try{ const r=await STORE.get(LOG_KEY); if(r) actlog=JSON.parse(r)||[]; }catch(e){}
+  try{ const early=actlog, r=await STORE.get(LOG_KEY); if(r){ actlog=unpackLog(r).concat(early); } }catch(e){}
+  try{ devId=(await STORE.get(DEV_KEY))||''; }catch(e){}
+  if(!devId){ devId='d'+Math.random().toString(36).slice(2,7); try{ await STORE.set(DEV_KEY,devId); }catch(e){} }
   try{ const p=await STORE.get(PREF_KEY); if(p) prefs=Object.assign(prefs,JSON.parse(p)); }catch(e){}
   try{ draft=(await STORE.get(DRAFT_KEY))||''; }catch(e){}
   document.title=APP.title;
@@ -1457,7 +1589,7 @@ async function load(){
   drawLinks(); drawPrefs();
   cloudStart();
   draw();
-  log('open',APP.build);
+  logOpen();
   const go=new URLSearchParams(location.search);          // home-screen shortcuts: ?new=1 and ?voice=1
   if(go.has('new')||go.has('voice')){
     try{ history.replaceState(null,'',location.pathname); }catch(e){}
@@ -1466,12 +1598,13 @@ async function load(){
 }
 
 /* ---- cloud sync ---- */
-let cloudRef=null, cloudSeen=-1, pushT=null, cloudBad='';
+let cloudRef=null, cloudSeen=-1, pushT=null, cloudBad='', cloudWas='';
 function cloudSay(s){
   const d=$('syncdot'), t=$('syncword');
   if(s==='live'&&cloudBad) s='error';
   const label={live:'Synced',saving:'Saving…',offline:'Offline — will sync later',
     off:'Not connected',error:cloudBad||'Sync error'}[s]||s;
+  if(label!==cloudWas){ cloudWas=label; log('sync',label); }
   if(d) d.className='syncdot '+s;
   if(t) t.textContent=label;
 }
@@ -1491,7 +1624,7 @@ function cloudListen(){
     if(m!==sig(local)){
       data=merged; rev=Math.max(rev,cloudSeen);
       STORE.set(APP.key,JSON.stringify(snap()));
-      log('cloud-in','took changes from another device');
+      log('cloud-in','took changes from another device: '+local.notes.length+' → '+merged.notes.length+' notes, '+merged.rules.filter(r=>!r.del).length+' rules');
       draw(); flash('Updated from your other device.');
     }
     if(m!==sig(remote)){                                    // the cloud is missing something this device has
@@ -1499,7 +1632,7 @@ function cloudListen(){
       rev=Date.now(); STORE.set(APP.key,JSON.stringify(snap())); cloudPush();
     }
   },err=>{
-    cloudFail(err); console.warn('cloud read failed:',err&&err.message);
+    log('sync','READ FAILED: '+(err&&(err.code||err.message)||'?')); cloudFail(err); console.warn('cloud read failed:',err&&err.message);
     setTimeout(()=>{ try{ cloudRef.off(); cloudListen(); }catch(e){} },15000);   // keep trying, so it connects once the rule is published
   });
 }
@@ -1519,14 +1652,16 @@ function cloudPush(){
     let d;
     try{ d=JSON.parse(JSON.stringify(snap())); }catch(e){ return; }
     cloudSeen=d.rev; cloudSay('saving');
-    cloudRef.set(d).then(()=>{ cloudBad=''; cloudSay('live'); })
-      .catch(e=>{ cloudFail(e); console.warn('cloud write failed:',e&&e.message); });
+    const bytes=JSON.stringify(d).length;
+    cloudRef.set(d).then(()=>{ cloudBad=''; log('sync','sent '+Math.round(bytes/1024*10)/10+' KB, '+d.notes.length+' notes'); cloudSay('live'); })
+      .catch(e=>{ log('sync','WRITE FAILED: '+(e&&(e.code||e.message)||'?')); cloudFail(e); console.warn('cloud write failed:',e&&e.message); });
   },400);
 }
 
 /* ---- settings ---- */
 let flashT, flashFn=null;
 function flash(m,label,fn){
+  log('says',m+(label?'  ['+label+']':''));
   $('foot-msg').textContent=m;
   const b=$('foot-act'); flashFn=fn||null; b.hidden=!fn; b.textContent=label||'';
   $('foot').classList.add('on');
@@ -1542,7 +1677,7 @@ function drawLinks(){
     box.appendChild(a);
   });
   $('logcount').textContent=actlog.length
-    ? actlog.length+' entries recorded.' : 'No activity recorded yet.';
+    ? actlog.length+' of '+LOG_MAX+' entries, '+Math.round(packLog(actlog).length/1024)+' KB, on device '+devId+'.' : 'No activity recorded yet.';
 }
 $('gear').addEventListener('click',()=>{ drawLinks(); drawPrefs(); wipeDisarm(); show('sheet-set'); $('sheet-set').scrollTop=0; });
 
@@ -1585,7 +1720,7 @@ $('exp-log').addEventListener('click',()=>{
   flash('Log exported — '+actlog.length+' entries.');
 });
 $('clr-log').addEventListener('click',()=>{
-  actlog=[]; try{ STORE.set(LOG_KEY,'[]'); }catch(e){}
+  logBase+=actlog.length; actlog=[]; flushLog();
   drawLinks(); flash('Activity log cleared.');
 });
 
