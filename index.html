@@ -429,6 +429,14 @@
     <input type="file" id="imp-file" accept=".json" style="display:none">
   </div>
 
+  <div class="lab">Import from Google Keep</div>
+  <p style="margin-bottom:9px" id="keep-state">Pick the .zip file from Google Takeout. Nothing is added until you confirm.</p>
+  <div class="stack">
+    <button class="btn" id="keep-pick">Choose the Takeout file</button>
+    <button class="btn primary" id="keep-go" hidden>Import</button>
+    <input type="file" id="keep-file" accept=".zip,.json,application/zip,application/json" multiple style="display:none">
+  </div>
+
   <div class="lab">Activity log</div>
   <p style="margin-bottom:9px" id="logcount">No activity recorded yet.</p>
   <p style="margin-bottom:9px" id="ghstate">Not sending yet.</p>
@@ -451,7 +459,7 @@
   <div class="lab">Links</div>
   <div class="stack" id="links"></div>
 
-  <p class="buildstamp" id="build">Build 3</p>
+  <p class="buildstamp" id="build">Build 4</p>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
@@ -464,7 +472,7 @@ const APP={
   title:   'Notes',               // shown in the header
   key:     'notes-v1',            // local storage key, unique per app
   dbPath:  'notes/main',          // Firebase branch, unique per app
-  build:   'Build 3 · 24 Nov 2026',
+  build:   'Build 4 · 24 Nov 2026',
   links:[                         // shown in settings
     {label:'Stored data',       url:'https://console.firebase.google.com/project/shopping-eb9b3/database/shopping-eb9b3-default-rtdb/data/~2Fnotes~2Fmain'},
     {label:'Firebase console',  url:'https://console.firebase.google.com/project/shopping-eb9b3/overview'},
@@ -1345,6 +1353,98 @@ function fitViewport(){
 if(window.visualViewport){ visualViewport.addEventListener('resize',fitViewport); visualViewport.addEventListener('scroll',fitViewport); }
 window.addEventListener('resize',fitViewport);
 fitViewport();
+
+/* ---- import from Google Keep (a Google Takeout .zip, or its .json files) ----
+   Each Keep note becomes one note here: title on the first line, then the text
+   exactly as it was. Checklists become "- [ ]" lines. Labels, pinned, archived
+   and the original dates come across. The rules then file each note. */
+let keepFound=[], keepInfo=null;
+async function unzipJson(buf){
+  const v=new DataView(buf), u8=new Uint8Array(buf), out=[], dec=new TextDecoder();
+  let e=-1;
+  for(let i=buf.byteLength-22;i>=Math.max(0,buf.byteLength-66000);i--){ if(v.getUint32(i,true)===0x06054b50){ e=i; break; } }
+  if(e<0) throw new Error('not a zip file');
+  const count=v.getUint16(e+10,true); let p=v.getUint32(e+16,true);
+  if(p===0xFFFFFFFF||count===0xFFFF) throw new Error('this zip is too large to read here');
+  for(let i=0;i<count&&v.getUint32(p,true)===0x02014b50;i++){
+    const method=v.getUint16(p+10,true), csize=v.getUint32(p+20,true), nlen=v.getUint16(p+28,true), xlen=v.getUint16(p+30,true), clen=v.getUint16(p+32,true), off=v.getUint32(p+42,true);
+    const name=dec.decode(u8.subarray(p+46,p+46+nlen));
+    p+=46+nlen+xlen+clen;
+    if(!/\.json$/i.test(name)||csize===0) continue;
+    const start=off+30+v.getUint16(off+26,true)+v.getUint16(off+28,true), raw=u8.subarray(start,start+csize);
+    let text='';
+    if(method===0) text=dec.decode(raw);
+    else if(method===8) text=await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'))).text();
+    else continue;
+    out.push({name:name,text:text});
+  }
+  return out;
+}
+function keepToNote(k){
+  if(!k||typeof k!=='object'||!(('textContent' in k)||('listContent' in k))) return null;
+  const parts=[];
+  if(k.title&&String(k.title).trim()) parts.push(String(k.title).trim());
+  if(k.textContent&&String(k.textContent).trim()) parts.push(String(k.textContent).replace(/\s+$/,''));
+  if(Array.isArray(k.listContent)&&k.listContent.length) parts.push(k.listContent.map(i=>'- ['+(i&&i.isChecked?'x':' ')+'] '+String((i&&i.text)||'').replace(/\n/g,' ')).join('\n'));
+  const text=parts.join('\n').trim();
+  const created=Math.round((+k.createdTimestampUsec||+k.userEditedTimestampUsec||0)/1000)||Date.now();
+  const edited=Math.round((+k.userEditedTimestampUsec||0)/1000)||created;
+  let h=0; for(let i=0;i<text.length;i++) h=(h*31+text.charCodeAt(i))>>>0;
+  return {id:'k'+created.toString(36)+(k.createdTimestampUsec?'':h.toString(36)),text:text,labels:(Array.isArray(k.labels)?k.labels:[]).map(l=>l&&l.name).filter(Boolean).map(String),
+    pinned:!!k.isPinned,archived:!!k.isArchived,trashed:!!k.isTrashed,created:created,updated:Math.max(created,edited),
+    pics:Array.isArray(k.attachments)?k.attachments.length:0};
+}
+async function keepRead(files){
+  const st=$('keep-state'); st.textContent='Reading…'; $('keep-go').hidden=true; keepFound=[];
+  let docs=[], bad=0;
+  try{
+    for(const f of files){
+      if(/\.json$/i.test(f.name)) docs.push({name:f.name,text:await f.text()});
+      else docs=docs.concat(await unzipJson(await f.arrayBuffer()));
+    }
+  }catch(err){ st.textContent='That file could not be read: '+(err&&err.message||'unknown problem')+'. Pick the .zip that Google Takeout gave you.'; log('keep-import','read failed: '+(err&&err.message)); return; }
+  const info={found:0,empty:0,here:0,trash:0,pics:0,labels:{}}, seen={};
+  docs.forEach(d=>{
+    let k=null; try{ k=JSON.parse(d.text); }catch(e){ bad++; return; }
+    const n=keepToNote(k); if(!n) return;
+    info.found++;
+    if(!n.text){ info.empty++; return; }
+    if(n.trashed){ info.trash++; return; }
+    if(seen[n.id]||noteById(n.id)||data.gone[n.id]){ info.here++; return; }
+    seen[n.id]=1; if(n.pics) info.pics++; n.labels.forEach(l=>{ info.labels[lc(l)]=l; });
+    keepFound.push(n);
+  });
+  keepInfo=info;
+  log('keep-import','read '+plural(docs.length,'file','files')+': '+info.found+' Keep notes, '+keepFound.length+' new, '+info.here+' already here, '+info.trash+' in Keep’s trash, '+info.empty+' empty, '+info.pics+' with pictures, '+bad+' unreadable');
+  if(!info.found){ st.textContent='No Keep notes were found in that file. Pick the .zip from Google Takeout with Keep ticked.'; return; }
+  const bits=[plural(keepFound.length,'note','notes')+' ready to import'];
+  if(Object.keys(info.labels).length) bits.push(plural(Object.keys(info.labels).length,'label','labels'));
+  if(info.here) bits.push(info.here+' already here (skipped)');
+  if(info.trash) bits.push(info.trash+' from Keep’s trash (skipped)');
+  if(info.empty) bits.push(info.empty+' empty (skipped)');
+  st.textContent=bits.join(', ')+'.'+(info.pics?' '+plural(info.pics,'note has','notes have')+' pictures or recordings; only the text comes across.':'');
+  $('keep-go').hidden=!keepFound.length; $('keep-go').textContent='Import '+plural(keepFound.length,'note','notes');
+}
+function keepImport(){
+  if(!keepFound.length) return;
+  const now=Date.now(); let filed=0;
+  keepFound.forEach(k=>{
+    const n={id:k.id,text:k.text,type:'',typeBy:'',rule:'',labels:k.labels.map(name=>addLabel(name).id).filter((x,i,a)=>a.indexOf(x)===i),
+      pinned:k.pinned&&!k.archived,archived:k.archived,trashed:false,created:k.created,updated:now,src:'typed'};
+    const c=classify(n.text);
+    if(c){ n.type=c.type.id; n.typeBy='rule'; n.rule=c.rule.id; filed++;
+      if(c.rule.label&&labelById(c.rule.label)&&!n.labels.includes(c.rule.label)) n.labels.push(c.rule.label); }
+    data.notes.push(n);
+  });
+  const total=keepFound.length; keepFound=[]; $('keep-go').hidden=true;
+  $('keep-state').textContent='Imported '+plural(total,'note','notes')+'. The rules filed '+filed+'; '+(total-filed)+' are Unsorted.';
+  log('keep-import','imported '+total+', rules filed '+filed+', Unsorted '+(total-filed));
+  save(); ui.view='notes'; ui.tab='all'; closeSheets(); draw();
+  flash('Imported '+plural(total,'note','notes')+' from Keep. '+(total-filed)+' are Unsorted.');
+}
+$('keep-pick').addEventListener('click',()=>$('keep-file').click());
+$('keep-file').addEventListener('change',e=>{ const fs=Array.from(e.target.files||[]); e.target.value=''; if(fs.length) keepRead(fs); });
+$('keep-go').addEventListener('click',keepImport);
 
 /* ---- this device's preferences ---- */
 const PREF_KEY=APP.key+'-prefs';
