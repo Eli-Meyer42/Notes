@@ -1,7 +1,8 @@
 /* Network-first for the page so a deploy shows up immediately,
    cache-first for icons. The cache only exists to keep the app
-   usable with no signal. */
-const CACHE = 'app-v1';
+   usable with no signal. Every path is relative, because GitHub
+   Pages serves the app from a subfolder. */
+const CACHE = 'notes-v1';
 const SHELL = ['./', './index.html', './manifest.webmanifest',
                './icon-192.png', './icon-512.png'];
 
@@ -12,7 +13,7 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil(
     caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
+      .then(keys => Promise.all(keys.filter(k => k.startsWith('notes-') && k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
