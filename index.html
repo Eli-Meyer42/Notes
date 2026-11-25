@@ -176,6 +176,11 @@
   .linkout{display:block;margin-top:8px;padding:10px 13px;border:1px solid var(--line);border-radius:12px;
     color:var(--accent);font-weight:500;font-size:15px;text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .meta{margin:14px 2px 0;font-size:13px;color:var(--soft);}
+  .otext{white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.5;border:1px solid var(--line);
+    border-radius:12px;padding:11px 12px;background:var(--tile);max-height:30vh;overflow:auto;}
+  .otext del{background:#F6D9D0;color:#8A3B22;text-decoration:line-through;border-radius:3px;}
+  .otext ins{background:#D5EBDD;color:#1F6B46;text-decoration:underline;border-radius:3px;}
+  .note.orig .ncard{background:var(--tile);}
   .swatches{display:flex;flex-wrap:wrap;gap:10px;}
   .swatch{width:38px;height:38px;border-radius:50%;border:3px solid var(--surface);background:var(--tc);cursor:pointer;
     box-shadow:0 0 0 1.5px var(--line);padding:0;}
@@ -197,7 +202,7 @@
     bottom:calc(var(--navh) + 86px + env(safe-area-inset-bottom));background:var(--surface);color:var(--ink);
     border:1px solid var(--line);box-shadow:0 6px 14px -8px rgba(42,48,52,.5);}
   .fab.voice svg{width:21px;height:21px;}
-  body[data-view="rules"] .fab{display:none;}
+  body[data-view="rules"] .fab,body[data-view="orig"] .fab{display:none;}
   .nav{position:fixed;left:0;right:0;bottom:0;z-index:44;background:var(--surface);border-top:1px solid var(--line);
     display:flex;justify-content:center;padding-bottom:env(safe-area-inset-bottom);}
   .nav button{flex:1;max-width:220px;height:var(--navh);border:none;background:none;font-size:12.5px;font-weight:500;
@@ -294,6 +299,10 @@
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="3.5" y="3.5" width="13" height="13" rx="2.5"/><path d="M6.8 7.6h6.4M6.8 10.5h6.4M6.8 13.4h3.6"/></svg>
     Notes
   </button>
+  <button data-act="view" data-id="orig">
+    <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="9" width="11" height="7.5" rx="1.8"/><path d="M7 9V6.8a3 3 0 016 0V9"/></svg>
+    Originals
+  </button>
   <button data-act="view" data-id="archive">
     <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="14" height="3.6" rx="1"/><path d="M4.2 7.6v7.2a1.2 1.2 0 001.2 1.2h9.2a1.2 1.2 0 001.2-1.2V7.6M8 11h4"/></svg>
     Archive
@@ -333,6 +342,7 @@
     <div class="lab">Type</div>
     <div class="chips" id="note-types"></div>
     <p class="why"><span id="note-why"></span><button class="linkish" id="note-rerun">Re-run rules</button></p>
+    <p class="why" id="note-orig" hidden><span id="note-orig-word"></span><button class="linkish" id="note-compare">Compare</button></p>
     <div class="lab">Labels</div>
     <div class="chips" id="note-labels"></div>
     <div class="row" id="note-newlabel-row" style="margin-top:8px" hidden>
@@ -347,6 +357,25 @@
   </div>
   <p class="meta" id="note-meta"></p>
   <button class="btn primary wide" id="note-done">Done</button>
+</div>
+
+<!-- an original, and how the note differs from it -->
+<div class="sheet" id="sheet-orig" role="dialog" aria-modal="true" aria-label="Original">
+  <div class="grab"></div>
+  <h3>Original</h3>
+  <p id="orig-meta"></p>
+  <div class="lab" id="orig-lab-a">Original (locked)</div>
+  <div class="otext" id="orig-a"></div>
+  <div id="orig-now">
+    <div class="lab">The note now</div>
+    <div class="otext" id="orig-b"></div>
+  </div>
+  <div class="actions">
+    <button class="btn" id="orig-open">Open the note</button>
+    <button class="btn" id="orig-copy">Copy original</button>
+  </div>
+  <div class="stack" style="margin-top:8px"><button class="btn" id="orig-revert">Put the original back</button></div>
+  <button class="btn primary wide" id="orig-done">Done</button>
 </div>
 
 <!-- rule editor -->
@@ -465,7 +494,7 @@
   <div class="lab">Links</div>
   <div class="stack" id="links"></div>
 
-  <p class="buildstamp" id="build">Build 5</p>
+  <p class="buildstamp" id="build">Build 6</p>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
@@ -478,7 +507,7 @@ const APP={
   title:   'Notes',               // shown in the header
   key:     'notes-v1',            // local storage key, unique per app
   dbPath:  'notes/main',          // Firebase branch, unique per app
-  build:   'Build 5 · 25 Nov 2026',
+  build:   'Build 6 · 25 Nov 2026',
   links:[                         // shown in settings
     {label:'Stored data',       url:'https://console.firebase.google.com/project/shopping-eb9b3/database/shopping-eb9b3-default-rtdb/data/~2Fnotes~2Fmain'},
     {label:'Firebase console',  url:'https://console.firebase.google.com/project/shopping-eb9b3/overview'},
@@ -529,13 +558,14 @@ function seedState(u){
       R('r-link',6,'link',[],'t-link')
     ],
     labels:[],
+    originals:[],
     gone:{}
   };
 }
 let data=seedState(0);
 let prefs={layout:'grid',autoVoice:false};      // this device only
 let draft='';                                    // unsaved text in the new-note box, this device only
-const ui={view:'notes',tab:'all',arch:'archived',label:'',q:'',searching:false};
+const ui={view:'notes',tab:'all',arch:'archived',otab:'all',label:'',q:'',searching:false};
 
 /* ---- lookups ---- */
 const byPos=(a,b)=>(a.pos-b.pos)||(a.id<b.id?-1:a.id>b.id?1:0);
@@ -669,20 +699,21 @@ function draw(){
   if(ui.label&&!labelById(ui.label)) ui.label='';
   document.body.dataset.view=ui.view;
   drawChrome(); drawTabs();
-  if(ui.view==='rules') drawRules(); else if(ui.view==='archive') drawArchive(); else drawNotes();
+  if(ui.view==='rules') drawRules(); else if(ui.view==='archive') drawArchive(); else if(ui.view==='orig') drawOrig(); else drawNotes();
   if(openId==='sheet-note') fillNote(false);
   if(openId==='sheet-labels') drawLabels();
+  if(openId==='sheet-orig') fillOrig();
   logView();
 }
 function drawChrome(){
-  $('apptitle').textContent=ui.view==='rules'?'Rules':ui.view==='archive'?'Archive':APP.title;
+  $('apptitle').textContent=ui.view==='rules'?'Rules':ui.view==='archive'?'Archive':ui.view==='orig'?'Originals':APP.title;
   const inRules=ui.view==='rules';
-  $('btn-search').hidden=inRules; $('btn-labels').hidden=inRules;
+  $('btn-search').hidden=inRules; $('btn-labels').hidden=inRules||ui.view==='orig';
   $('btn-search').classList.toggle('on',ui.searching);
   $('btn-labels').classList.toggle('on',!!ui.label);
   $('searchrow').hidden=inRules||!ui.searching;
   const l=ui.label?labelById(ui.label):null, row=$('labelrow');
-  row.hidden=inRules||!l;
+  row.hidden=inRules||ui.view==='orig'||!l;
   row.innerHTML=l?'<button class="chip" data-act="label-clear" aria-label="Stop filtering by '+esc(l.name)+'">Label: '+esc(l.name)+' &nbsp;✕</button>':'';
   Array.prototype.forEach.call($('nav').children,b=>{
     const on=b.dataset.id===ui.view; b.classList.toggle('on',on);
@@ -698,7 +729,11 @@ function drawTabs(){
   if(ui.view==='rules'){ box.hidden=true; box.innerHTML=''; return; }
   box.hidden=false;
   const keep=box.scrollLeft; let h='';
-  if(ui.view==='archive'){
+  if(ui.view==='orig'){
+    const os=liveOrig(), c={same:0,changed:0,gone:0}; os.forEach(o=>{ c[origStatus(o)]++; });
+    h=tabHTML('all','All',os.length,ui.otab==='all','plain')+tabHTML('changed','Changed',c.changed,ui.otab==='changed','plain')+
+      tabHTML('same','Unchanged',c.same,ui.otab==='same','plain')+tabHTML('gone','Note deleted',c.gone,ui.otab==='gone','plain');
+  }else if(ui.view==='archive'){
     h=tabHTML('archived','Archived',data.notes.filter(n=>n.archived&&!n.trashed).length,ui.arch==='archived','plain')+
       tabHTML('trash','Trash',data.notes.filter(n=>n.trashed).length,ui.arch==='trash','plain');
   }else{
@@ -1054,6 +1089,7 @@ function fillNote(first){
   pin.hidden=n.archived||n.trashed; pin.textContent=n.pinned?'Unpin':'Pin';
   ar.textContent=n.trashed?'Restore':(n.archived?'Unarchive':'Archive');
   if(armEl!==del) del.textContent=n.trashed?'Delete forever':'Delete';
+  { const o=origById(n.id); $('note-orig').hidden=!o; if(o) $('note-orig-word').textContent=o.text===n.text?'Matches its saved original.':'Changed since its original was saved.'; }
   $('note-meta').textContent='Created '+fmtDate(n.created)+(n.updated>n.created+1000?'. Edited '+fmtDate(n.updated):'')+(n.src==='voice'?'. Dictated':'')+'.';
 }
 /* Saves the text box into the note. Unsorted notes get another go at the rules. */
@@ -1295,12 +1331,13 @@ function setView(v){
 function act(a,id,el){
   switch(a){
     case 'view': setView(id); break;
-    case 'tab': if(ui.view==='archive') ui.arch=id; else ui.tab=id; window.scrollTo(0,0); draw(); break;
+    case 'tab': if(ui.view==='archive') ui.arch=id; else if(ui.view==='orig') ui.otab=id; else ui.tab=id; window.scrollTo(0,0); draw(); break;
     case 'label-clear': ui.label=''; draw(); break;
     case 'new-type': cmpHand=id==='auto'?null:id; drawComposer(); break;
     case 'note-type': setNoteType(id); break;
     case 'note-label': toggleNoteLabel(id); break;
     case 'note-label-new': $('note-newlabel-row').hidden=false; $('note-newlabel').focus(); break;
+    case 'freeze': freezeNow(); break;
     case 'add-rule': openRule(''); break;
     case 'edit-rule': openRule(id); break;
     case 'rule-up': moveRule(id,-1); break;
@@ -1325,7 +1362,7 @@ document.addEventListener('click',e=>{
   const a=t.closest('[data-act]');
   if(a){ act(a.dataset.act,a.dataset.id||'',a); return; }
   const card=t.closest('.note');
-  if(card) openNote(card.dataset.id);
+  if(card){ if(card.dataset.oid) openOrig(card.dataset.oid); else openNote(card.dataset.id); }
 });
 document.addEventListener('input',e=>{
   if(e.target&&e.target.id==='try') tryNote();
@@ -1335,7 +1372,7 @@ document.addEventListener('keydown',e=>{
   if(e.key==='Enter'){
     if((e.ctrlKey||e.metaKey)&&openId==='sheet-new'){ e.preventDefault(); saveComposer(); return; }
     const el=e.target;
-    if(el&&el.classList&&el.classList.contains('note')){ e.preventDefault(); openNote(el.dataset.id); return; }
+    if(el&&el.classList&&el.classList.contains('note')){ e.preventDefault(); if(el.dataset.oid) openOrig(el.dataset.oid); else openNote(el.dataset.id); return; }
     if(el&&el.id==='label-rename'){ e.preventDefault(); if(editLabel) renameLabel(editLabel); }
   }
 });
@@ -1359,6 +1396,112 @@ function fitViewport(){
 if(window.visualViewport){ visualViewport.addEventListener('resize',fitViewport); visualViewport.addEventListener('scroll',fitViewport); }
 window.addEventListener('resize',fitViewport);
 fitViewport();
+
+/* ---- originals: a locked copy of a note, kept so the note itself can be changed freely ----
+   An original is never edited. It shares its note's id, so the two can always be compared. */
+const liveOrig=()=>data.originals.filter(o=>!o.del);
+const origById=id=>data.originals.find(o=>o.id===id&&!o.del)||null;
+function origStatus(o){ const n=noteById(o.id); return (!n||n.trashed)?'gone':(n.text===o.text?'same':'changed'); }
+const noOrigYet=()=>data.notes.filter(n=>!n.trashed&&n.text.trim()&&!origById(n.id));
+function freeze(notes){
+  const now=Date.now(); let made=0;
+  notes.forEach(n=>{
+    if(!n||!n.text.trim()||origById(n.id)) return;
+    const o={id:n.id,text:n.text,labels:n.labels.map(labelById).filter(Boolean).map(l=>l.name),created:n.created,at:now,del:false,u:now};
+    const i=data.originals.findIndex(x=>x.id===n.id); if(i>=0) data.originals[i]=o; else data.originals.push(o);
+    made++;
+  });
+  return made;
+}
+function freezeNow(){
+  const made=freeze(noOrigYet());
+  log('originals','saved '+made+' originals, '+liveOrig().length+' in total');
+  if(made) save();
+  draw(); flash(made?'Saved '+plural(made,'original','originals')+'. They can’t be edited.':'Every note already has an original.');
+}
+const ORIG_WORD={same:'Unchanged',changed:'Changed',gone:'Note deleted'};
+function origCardHTML(o){
+  const st=origStatus(o), tags=o.labels.map(l=>'<span class="tag">'+esc(l)+'</span>').join('');
+  return '<article class="note orig'+(st==='gone'?' unsorted':'')+'" data-oid="'+esc(o.id)+'" tabindex="0"'+(st==='changed'?' style="--tc:#C98A14"':'')+'>'+
+    '<div class="ntab'+(st==='changed'?' tint':'')+'">'+ORIG_WORD[st]+'</div>'+
+    '<div class="ncard"><div class="ntext">'+esc(o.text.length>700?o.text.slice(0,700)+'…':o.text)+'</div>'+(tags?'<div class="nlabels">'+tags+'</div>':'')+'</div></article>';
+}
+function drawOrig(){
+  const terms=queryTerms(), all=liveOrig(), wait=noOrigYet().length;
+  const list=all.filter(o=>(ui.otab==='all'||origStatus(o)===ui.otab)&&(!terms.length||terms.every(q=>lc(o.text+'\n'+o.labels.join('\n')).includes(q))))
+    .sort((x,y)=>(y.created-x.created)||(x.id<y.id?1:-1));
+  let h='';
+  if(wait) h+='<div class="bar"><p>'+plural(wait,'note has','notes have')+' no original saved.</p><button class="btn small" data-act="freeze">Save '+(wait===1?'it':'them')+'</button></div>';
+  if(!all.length&&!wait) h+='<div class="empty"><b>No originals yet</b>An original is a locked copy of a note. Once it is saved, you can change the note freely and always compare it with how it started.</div>';
+  else if(!all.length) h+='<div class="empty"><b>No originals yet</b>Saving them makes a locked copy of every note, so you can change, combine and reorganise freely and always compare with how each one started.</div>';
+  else if(!list.length) h+='<div class="empty"><b>'+(terms.length?'Nothing matches “'+esc(ui.q.trim())+'”':'Nothing here')+'</b></div>';
+  else{
+    const k=colCount(); lastCols=k; const cols=[]; for(let i=0;i<k;i++) cols.push({h:0,html:''});
+    const colW=(Math.min(window.innerWidth,660)-28-(k-1)*10)/k;
+    list.forEach(o=>{ let c=cols[0]; cols.forEach(x=>{ if(x.h<c.h) c=x; }); c.html+=origCardHTML(o); c.h+=estH(o,colW)+12; });
+    h+='<div class="cols">'+cols.map(c=>'<div class="col">'+c.html+'</div>').join('')+'</div>';
+  }
+  $('main').innerHTML=h;
+}
+/* Word-by-word comparison: which words were taken out of the original, which were added since. */
+function diffWords(a,b){
+  let A=a.split(/(\s+)/).filter(x=>x!==''), B=b.split(/(\s+)/).filter(x=>x!=='');
+  if(A.length*B.length>6000000){ A=a.split(/(\n)/).filter(x=>x!==''); B=b.split(/(\n)/).filter(x=>x!==''); }   // very long notes: compare by line
+  if(A.length*B.length>6000000) return {a:'<del>'+esc(a)+'</del>',b:'<ins>'+esc(b)+'</ins>',out:A.length,in:B.length};
+  const n=A.length, m=B.length, W=m+1, L=new Uint16Array((n+1)*W);
+  for(let i=n-1;i>=0;i--) for(let j=m-1;j>=0;j--) L[i*W+j]=A[i]===B[j]?L[(i+1)*W+j+1]+1:Math.max(L[(i+1)*W+j],L[i*W+j+1]);
+  let i=0, j=0, ha='', hb='', out=0, inn=0;
+  const real=t=>/\S/.test(t);
+  while(i<n&&j<m){
+    if(A[i]===B[j]){ ha+=esc(A[i]); hb+=esc(B[j]); i++; j++; }
+    else if(L[(i+1)*W+j]>=L[i*W+j+1]){ ha+=real(A[i])?'<del>'+esc(A[i])+'</del>':esc(A[i]); if(real(A[i])) out++; i++; }
+    else{ hb+=real(B[j])?'<ins>'+esc(B[j])+'</ins>':esc(B[j]); if(real(B[j])) inn++; j++; }
+  }
+  for(;i<n;i++){ ha+=real(A[i])?'<del>'+esc(A[i])+'</del>':esc(A[i]); if(real(A[i])) out++; }
+  for(;j<m;j++){ hb+=real(B[j])?'<ins>'+esc(B[j])+'</ins>':esc(B[j]); if(real(B[j])) inn++; }
+  return {a:ha,b:hb,out:out,in:inn};
+}
+let curOrig=null;
+function openOrig(id){
+  const o=origById(id); if(!o) return;
+  curOrig=id; show('sheet-orig'); fillOrig(); $('sheet-orig').scrollTop=0;
+  log('orig-open','"'+clip(o.text,40)+'" · '+ORIG_WORD[origStatus(o)]);
+}
+function fillOrig(){
+  const o=origById(curOrig); if(!o){ if(openId==='sheet-orig') closeSheets(); return; }
+  const st=origStatus(o), n=noteById(o.id);
+  let meta='Saved '+fmtDate(o.at)+'. Written '+fmtDate(o.created)+'.';
+  if(st==='same'){ $('orig-a').textContent=o.text; meta+=' The note still matches it.'; }
+  else if(st==='gone'){ $('orig-a').textContent=o.text; meta+=' Its note has been deleted.'; }
+  else{ const d=diffWords(o.text,n.text); $('orig-a').innerHTML=d.a; $('orig-b').innerHTML=d.b;
+    meta+=' Since then: '+plural(d.out,'word','words')+' taken out (struck through), '+plural(d.in,'word','words')+' added (underlined).'; }
+  $('orig-meta').textContent=meta;
+  $('orig-now').hidden=st!=='changed';
+  $('orig-open').hidden=st==='gone';
+  const rv=$('orig-revert'); rv.hidden=st==='same'; rv.textContent=st==='gone'?'Bring it back as a note':'Put the original back';
+}
+$('orig-done').addEventListener('click',closeSheets);
+$('orig-open').addEventListener('click',()=>{ const id=curOrig; if(noteById(id)) openNote(id); });
+$('orig-copy').addEventListener('click',()=>{
+  const o=origById(curOrig); if(!o) return;
+  const done=()=>flash('Original copied.'), fail=()=>flash('Copying isn’t allowed here. Select the text and copy it by hand.');
+  try{ navigator.clipboard.writeText(o.text).then(done,fail); }catch(e){ fail(); }
+});
+$('orig-revert').addEventListener('click',()=>{
+  const o=origById(curOrig); if(!o) return;
+  const now=Date.now(); let n=noteById(o.id);
+  if(!n){
+    n={id:o.id,text:o.text,type:'',typeBy:'',rule:'',labels:o.labels.map(name=>addLabel(name).id),pinned:false,archived:false,trashed:false,created:o.created,updated:now,src:'typed'};
+    fileByRule(n,classify(n.text)); n.pinned=false; delete data.gone[o.id]; data.notes.push(n);
+    log('orig-revert','brought back "'+clip(o.text,40)+'" as a note'); save(); closeSheets(); flash('Brought back as a note.'); return;
+  }
+  const before={text:n.text,trashed:n.trashed};
+  n.text=o.text; n.trashed=false; n.updated=now;
+  log('orig-revert','put the original back on "'+clip(o.text,40)+'"'); save(); closeSheets();
+  flash('Original put back.','Undo',()=>{ const m=noteById(o.id); if(!m) return; m.text=before.text; m.trashed=before.trashed; m.updated=Date.now(); save(); draw(); });
+});
+$('note-compare').addEventListener('click',()=>{ const id=cur; commitNoteText(); if(origById(id)) openOrig(id); });
+onClose['sheet-orig']=()=>{ curOrig=null; draw(); };
 
 /* ---- import from Google Keep (a Google Takeout .zip, or its .json files) ----
    Each Keep note becomes one note here: title on the first line, then the text
@@ -1442,7 +1585,7 @@ function keepImport(){
       if(c.rule.label&&labelById(c.rule.label)&&!n.labels.includes(c.rule.label)) n.labels.push(c.rule.label); }
     data.notes.push(n);
   });
-  const total=keepFound.length; keepFound=[]; $('keep-go').hidden=true;
+  const total=keepFound.length; freeze(keepFound.map(k=>noteById(k.id)).filter(Boolean)); keepFound=[]; $('keep-go').hidden=true;
   $('keep-state').textContent='Imported '+plural(total,'note','notes')+'. The rules filed '+filed+'; '+(total-filed)+' are Unsorted.';
   log('keep-import','imported '+total+', rules filed '+filed+', Unsorted '+(total-filed));
   save(); ui.view='notes'; ui.tab='all'; closeSheets(); draw();
@@ -1531,11 +1674,12 @@ const typeName=n=>{ const t=typeOf(n); return t?t.name:'Unsorted'; };
 function where(){
   const tab=ui.tab==='all'?'All':ui.tab==='unsorted'?'Unsorted':(typeById(ui.tab)||{name:'?'}).name;
   const l=ui.label?labelById(ui.label):null;
-  return '  ['+ui.view+(ui.view==='notes'?'/'+tab:ui.view==='archive'?'/'+ui.arch:'')+(l?' · label '+l.name:'')+(ui.q?' · searching':'')+(openId?' > '+openId.replace('sheet-',''):'')+']';
+  return '  ['+ui.view+(ui.view==='notes'?'/'+tab:ui.view==='archive'?'/'+ui.arch:ui.view==='orig'?'/'+ui.otab:'')+(l?' · label '+l.name:'')+(ui.q?' · searching':'')+(openId?' > '+openId.replace('sheet-',''):'')+']';
 }
 /* Every tap, before its handler runs, so the log reads as tap → what the app did. */
 function tapLabel(el){
   const card=el.closest('.note'), n=card?noteById(card.dataset.id):null;
+  if(card&&card.dataset.oid){ const o=origById(card.dataset.oid); return 'original "'+clip(o?o.text:'',40)+'"'; }
   if(n&&el.matches('input[data-line]')) return 'tick box on line '+(+el.dataset.line+1)+' of note "'+clip(n.text,40)+'"';
   if(n) return 'note "'+clip(n.text,40)+'" ('+typeName(n)+')';
   const aria=el.getAttribute('aria-label'), t=clip(el.textContent||'',40);
@@ -1597,7 +1741,7 @@ addEventListener('unhandledrejection',e=>log('ERROR','unhandled: '+((e.reason&&(
 /* what is on screen: logged when the screen, tab, filter or scroll position changes */
 let viewKey='';
 function logView(){
-  const k=[ui.view,ui.tab,ui.arch,ui.label,ui.q?1:0,prefs.layout].join('|');
+  const k=[ui.view,ui.tab,ui.arch,ui.otab,ui.label,ui.q?1:0,prefs.layout].join('|');
   if(k===viewKey) return; viewKey=k;
   log('view','showing'+where()+' · '+plural(document.querySelectorAll('#main .note').length,'note','notes')+' drawn · '+prefs.layout);
 }
@@ -1712,6 +1856,8 @@ function normalize(d){
       type:r.type?String(r.type):'',label:r.label?String(r.label):'',pin:!!r.pin,on:r.on!==false,
       pos:+r.pos||0,del:!!r.del,u:+r.u||0})),
     labels:arr(d.labels).filter(l=>l&&l.id).map(l=>({id:String(l.id),name:String(l.name||'Label'),del:!!l.del,u:+l.u||0})),
+    originals:arr(d.originals).filter(o=>o&&o.id).map(o=>({id:String(o.id),text:o.text==null?'':String(o.text),labels:arr(o.labels).map(String),
+      created:+o.created||0,at:+o.at||0,del:!!o.del,u:+o.u||0})),
     gone:gone
   };
 }
@@ -1728,18 +1874,19 @@ function mergeStates(a,b){
   Object.keys(a.gone).forEach(k=>{ gone[k]=Math.max(gone[k]||0,a.gone[k]||0); });
   return {
     notes:byId(a.notes,b.notes,'updated').filter(n=>!(gone[n.id]&&n.updated<=gone[n.id])),
-    types:byId(a.types,b.types,'u'), rules:byId(a.rules,b.rules,'u'), labels:byId(a.labels,b.labels,'u'), gone:gone
+    types:byId(a.types,b.types,'u'), rules:byId(a.rules,b.rules,'u'), labels:byId(a.labels,b.labels,'u'),
+    originals:byId(a.originals,b.originals,'u'), gone:gone
   };
 }
 function sig(s){
   const sorted=a=>a.slice().sort((x,y)=>x.id<y.id?-1:x.id>y.id?1:0);
   const g={}; Object.keys(s.gone).sort().forEach(k=>{ g[k]=s.gone[k]; });
-  return JSON.stringify([sorted(s.notes),sorted(s.types),sorted(s.rules),sorted(s.labels),g]);
+  return JSON.stringify([sorted(s.notes),sorted(s.types),sorted(s.rules),sorted(s.labels),sorted(s.originals),g]);
 }
 
 /* ---- save / load ---- */
 let rev=0, saveWarned=false;
-function snap(){ return {notes:data.notes,types:data.types,rules:data.rules,labels:data.labels,gone:data.gone,rev:rev}; }
+function snap(){ return {notes:data.notes,types:data.types,rules:data.rules,labels:data.labels,originals:data.originals,gone:data.gone,rev:rev}; }
 function applyState(d){
   if(!d||typeof d!=='object') return false;
   data=normalize(d); rev=+d.rev||0; return true;
@@ -1962,7 +2109,7 @@ $('imp-file').addEventListener('change',e=>{
     /* Types, rules and labels: the backup's version comes back if the current one was deleted,
        or is still the untouched starter (so restoring after "Clear everything" really restores). */
     const starter=seedState(0), bare=o=>{ const c=Object.assign({},o); delete c.u; return JSON.stringify(Object.keys(c).sort().map(key=>[key,c[key]])); };
-    ['types','rules','labels'].forEach(k=>inc[k].forEach(x=>{
+    ['types','rules','labels','originals'].forEach(k=>inc[k].forEach(x=>{
       const c=data[k].find(y=>y.id===x.id), s=starter[k].find(y=>y.id===x.id);
       if(c&&!x.del&&(c.del||(s&&bare(c)===bare(s)))) x.u=now;
     }));
@@ -2002,6 +2149,7 @@ $('wipe').addEventListener('click',()=>{
   const now=Date.now(), fresh=seedState(now);
   data.notes.forEach(n=>{ data.gone[n.id]=now; });           // mark every note deleted so no device brings it back
   data.notes=[];
+  data.originals.forEach(o=>{ o.del=true; o.text=''; o.labels=[]; o.u=now; });
   ['types','rules','labels'].forEach(k=>{
     data[k].forEach(x=>{ x.del=true; x.u=now; });
     fresh[k].forEach(x=>{ const i=data[k].findIndex(y=>y.id===x.id); if(i>=0) data[k][i]=x; else data[k].push(x); });

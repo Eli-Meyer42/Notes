@@ -39,6 +39,7 @@ Everything lives in one object, saved locally and mirrored to Firebase at
 | `types` | `name`, `color`, `pos` |
 | `rules` | `cond` (`starts`, `contains`, `link`, `checklist`), `words`, `type`, `label`, `pin`, `on`, `pos` |
 | `labels` | `name` |
+| `originals` | locked copies of notes: `text`, `labels`, `created`, `at`. Same id as the note, never edited |
 | `gone` | ids of notes deleted for good |
 
 The online copy is scrambled. A passphrase, typed once per device, makes a
