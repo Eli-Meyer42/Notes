@@ -41,7 +41,13 @@ Everything lives in one object, saved locally and mirrored to Firebase at
 | `labels` | `name` |
 | `gone` | ids of notes deleted for good |
 
-Sync differs from the template in one way: instead of the newest whole copy
+The online copy is scrambled. A passphrase, typed once per device, makes a
+key (PBKDF2, then AES-GCM) that stays on the device; what goes to Firebase is
+`{rev, enc: {salt, iv, ct}}` and cannot be read without it. Nothing syncs
+until a passphrase is set. A copy online that the device cannot open is
+replaced from the device.
+
+Sync also differs from the template in one way: instead of the newest whole copy
 winning, two copies are merged item by item (the newer version of each note,
 type, rule and label wins). A note written on one device while another is
 offline is therefore never dropped. Deleted types, rules and labels are kept

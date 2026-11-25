@@ -244,6 +244,7 @@
   .syncdot.live{background:#3E8F63;}
   .syncdot.saving{background:#C9A227;}
   .syncdot.error{background:var(--warn);}
+  .syncdot.locked{background:#C9A227;}
   .buildstamp{text-align:center;font-size:12px;color:var(--soft);margin:22px 0 2px!important;}
   :focus-visible{outline:2.5px solid var(--ink);outline-offset:2px;}
   input:focus-visible,textarea:focus-visible,select:focus-visible{outline:none;border-color:var(--ink);box-shadow:0 0 0 1px var(--ink);}
@@ -411,6 +412,11 @@
 
   <div class="lab">Sync</div>
   <div class="syncrow"><span class="syncdot" id="syncdot"></span><span id="syncword">Not connected</span></div>
+  <p style="margin:6px 0 9px" id="pass-state"></p>
+  <div class="row" id="pass-row">
+    <input id="pass" type="password" placeholder="Passphrase" autocomplete="off" aria-label="Passphrase">
+    <button class="btn" id="pass-set">Set passphrase</button>
+  </div>
 
   <div class="lab">Notes layout</div>
   <div class="seg" id="seg-layout">
@@ -459,7 +465,7 @@
   <div class="lab">Links</div>
   <div class="stack" id="links"></div>
 
-  <p class="buildstamp" id="build">Build 4</p>
+  <p class="buildstamp" id="build">Build 5</p>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
@@ -472,7 +478,7 @@ const APP={
   title:   'Notes',               // shown in the header
   key:     'notes-v1',            // local storage key, unique per app
   dbPath:  'notes/main',          // Firebase branch, unique per app
-  build:   'Build 4 · 24 Nov 2026',
+  build:   'Build 5 · 25 Nov 2026',
   links:[                         // shown in settings
     {label:'Stored data',       url:'https://console.firebase.google.com/project/shopping-eb9b3/database/shopping-eb9b3-default-rtdb/data/~2Fnotes~2Fmain'},
     {label:'Firebase console',  url:'https://console.firebase.google.com/project/shopping-eb9b3/overview'},
@@ -1555,7 +1561,7 @@ document.addEventListener('change',e=>{
 },true);
 /* typing in any box, including typing that gets abandoned */
 const typing={};
-document.addEventListener('focusin',e=>{ const el=e.target; if(el&&el.id&&/INPUT|TEXTAREA/.test(el.tagName)&&el.type!=='checkbox'&&el.type!=='file') typing[el.id]={n:0,t:Date.now()}; });
+document.addEventListener('focusin',e=>{ const el=e.target; if(el&&el.id&&/INPUT|TEXTAREA/.test(el.tagName)&&!/checkbox|file|password/.test(el.type)) typing[el.id]={n:0,t:Date.now()}; });
 document.addEventListener('input',e=>{ const w=e.target&&typing[e.target.id]; if(w) w.n++; },true);
 document.addEventListener('focusout',e=>{
   const el=e.target, w=el&&typing[el.id]; if(!w) return;
@@ -1758,11 +1764,13 @@ async function load(){
   try{ if(history.state&&history.state.sheet) history.replaceState(null,''); }catch(e){}   // a reload with a sheet open
   if(!SR){ $('fab-mic').hidden=true; $('new-mic').hidden=true; }
   drawLinks(); drawPrefs();
+  await keyLoad(); paintPass();
   cloudStart();
   draw();
   logOpen();
   await ghLoad();
   if(ghTok&&unsentCount()>40) sendLog(false,false);
+  if(!encKey&&cloudRef) flash('Sync is paused until you set a passphrase in Settings.');
   const go=new URLSearchParams(location.search);          // home-screen shortcuts: ?new=1 and ?voice=1
   if(go.has('new')||go.has('voice')){
     try{ history.replaceState(null,'',location.pathname); }catch(e){}
@@ -1770,12 +1778,41 @@ async function load(){
   }
 }
 
+/* ---- passphrase: notes are scrambled on this device before they go online ----
+   The passphrase is typed once per device. From it comes a key (PBKDF2, then
+   AES-GCM); the key is kept on the device, the passphrase is not kept anywhere.
+   The online copy is {rev, enc:{salt, iv, ct}} and is unreadable without it. */
+const KEY_KEY=APP.key+'-key';
+let encKey=null, encSalt='';
+const b64e=u8=>{ let t=''; for(let i=0;i<u8.length;i+=0x8000) t+=String.fromCharCode.apply(null,u8.subarray(i,i+0x8000)); return btoa(t); };
+const b64d=str=>Uint8Array.from(atob(str),c=>c.charCodeAt(0));
+async function deriveKey(pass,salt){
+  const base=await crypto.subtle.importKey('raw',new TextEncoder().encode(pass),'PBKDF2',false,['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2',salt:b64d(salt),iterations:310000,hash:'SHA-256'},base,{name:'AES-GCM',length:256},true,['encrypt','decrypt']);
+}
+async function keyLoad(){
+  try{ const j=JSON.parse((await STORE.get(KEY_KEY))||'null');
+    if(j&&j.k&&j.s){ encKey=await crypto.subtle.importKey('raw',b64d(j.k),'AES-GCM',true,['encrypt','decrypt']); encSalt=j.s; } }catch(e){ encKey=null; }
+}
+async function keySave(){ await STORE.set(KEY_KEY,JSON.stringify({k:b64e(new Uint8Array(await crypto.subtle.exportKey('raw',encKey))),s:encSalt})); }
+async function seal(obj){
+  const iv=crypto.getRandomValues(new Uint8Array(12));
+  const ct=new Uint8Array(await crypto.subtle.encrypt({name:'AES-GCM',iv:iv},encKey,new TextEncoder().encode(JSON.stringify(obj))));
+  return {v:1,salt:encSalt,iv:b64e(iv),ct:b64e(ct)};
+}
+async function unseal(enc,key){
+  const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:b64d(enc.iv)},key||encKey,b64d(enc.ct));
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+
 /* ---- cloud sync ---- */
-let cloudRef=null, cloudSeen=-1, pushT=null, cloudBad='', cloudWas='';
+let cloudRef=null, cloudSeen=-1, pushT=null, cloudBad='', cloudWas='', cloudChain=Promise.resolve(), lastRemote, passBusy=false;
 function cloudSay(s){
   const d=$('syncdot'), t=$('syncword');
   if(s==='live'&&cloudBad) s='error';
+  if((s==='live'||s==='saving')&&!encKey) s='locked';
   const label={live:'Synced',saving:'Saving…',offline:'Offline — will sync later',
+    locked:(lastRemote&&lastRemote.enc)?'Paused — enter your passphrase below to sync':'Paused — set a passphrase below to sync',
     off:'Not connected',error:cloudBad||'Sync error'}[s]||s;
   if(label!==cloudWas){ cloudWas=label; log('sync',label); }
   if(d) d.className='syncdot '+s;
@@ -1786,24 +1823,39 @@ function cloudFail(err){
   cloudBad=denied?'Not syncing — this app isn’t in the Firebase rules yet':'Sync error';
   cloudSay('error');
 }
+/* Merge another copy into this device. Returns true if that copy was missing something from here. */
+function takeCopy(plain,why){
+  const remote=normalize(plain), local=normalize(snap()), merged=mergeStates(local,remote), m=sig(merged);
+  if(m!==sig(local)){
+    data=merged; rev=Math.max(rev,cloudSeen);
+    STORE.set(APP.key,JSON.stringify(snap()));
+    log('cloud-in',why+': '+local.notes.length+' → '+merged.notes.length+' notes, '+merged.rules.filter(r=>!r.del).length+' rules');
+    draw(); flash('Updated from your other device.');
+  }
+  return m!==sig(remote);
+}
+async function cloudIn(d){
+  cloudBad=''; lastRemote=d||null;
+  if(!encKey){ cloudSay('locked'); paintPass(); return; }           // nothing leaves or arrives until a passphrase is set
+  if(!d){ cloudSay('live'); cloudPush(); return; }                   // empty cloud: seed it from this device
+  if(d.rev===cloudSeen) return;                                      // our own write coming back
+  cloudSeen=d.rev||0;
+  let plain=null;
+  if(d.enc){ try{ plain=await unseal(d.enc); }catch(e){ plain=null; } }
+  if(!plain){                                                        // unprotected, damaged, or not ours: put this device's copy back
+    log('sync',d.enc?'the online copy could not be opened with this device’s key, replacing it':'the online copy was not scrambled, replacing it');
+    rev=Date.now(); STORE.set(APP.key,JSON.stringify(snap())); cloudPush(); return;
+  }
+  cloudSay('live');
+  if(takeCopy(plain,'took changes from another device')){
+    log('cloud-out','sent this device’s changes');
+    rev=Date.now(); STORE.set(APP.key,JSON.stringify(snap())); cloudPush();
+  }
+}
 function cloudListen(){
   cloudRef.on('value',s=>{
-    cloudBad='';
     const d=s.val();
-    if(!d){ cloudSay('live'); cloudPush(); return; }       // empty cloud: seed it from this device
-    if(d.rev===cloudSeen){ return; }                       // our own write coming back
-    cloudSeen=d.rev||0; cloudSay('live');
-    const remote=normalize(d), local=normalize(snap()), merged=mergeStates(local,remote), m=sig(merged);
-    if(m!==sig(local)){
-      data=merged; rev=Math.max(rev,cloudSeen);
-      STORE.set(APP.key,JSON.stringify(snap()));
-      log('cloud-in','took changes from another device: '+local.notes.length+' → '+merged.notes.length+' notes, '+merged.rules.filter(r=>!r.del).length+' rules');
-      draw(); flash('Updated from your other device.');
-    }
-    if(m!==sig(remote)){                                    // the cloud is missing something this device has
-      log('cloud-out','sent this device’s changes');
-      rev=Date.now(); STORE.set(APP.key,JSON.stringify(snap())); cloudPush();
-    }
+    cloudChain=cloudChain.then(()=>cloudIn(d)).catch(e=>log('ERROR','cloud-in: '+(e&&e.message||e)));
   },err=>{
     log('sync','READ FAILED: '+(err&&(err.code||err.message)||'?')); cloudFail(err); console.warn('cloud read failed:',err&&err.message);
     setTimeout(()=>{ try{ cloudRef.off(); cloudListen(); }catch(e){} },15000);   // keep trying, so it connects once the rule is published
@@ -1819,16 +1871,49 @@ function cloudStart(){
   }catch(e){ cloudSay('error'); console.warn('cloud init failed:',e&&e.message); }
 }
 function cloudPush(){
-  if(!cloudRef) return;
+  if(!cloudRef||!encKey) return;
   clearTimeout(pushT);
-  pushT=setTimeout(()=>{
-    let d;
-    try{ d=JSON.parse(JSON.stringify(snap())); }catch(e){ return; }
+  pushT=setTimeout(async()=>{
+    let plain, d;
+    try{ plain=JSON.parse(JSON.stringify(snap())); const r=plain.rev; delete plain.rev; d={rev:r,enc:await seal(plain)}; }catch(e){ log('ERROR','could not scramble the copy: '+(e&&e.message)); return; }
     cloudSeen=d.rev; cloudSay('saving');
-    const bytes=JSON.stringify(d).length;
-    cloudRef.set(d).then(()=>{ cloudBad=''; log('sync','sent '+Math.round(bytes/1024*10)/10+' KB, '+d.notes.length+' notes'); cloudSay('live'); })
+    const bytes=d.enc.ct.length;
+    cloudRef.set(d).then(()=>{ cloudBad=''; log('sync','sent '+Math.round(bytes/1024*10)/10+' KB scrambled, '+plain.notes.length+' notes'); cloudSay('live'); })
       .catch(e=>{ log('sync','WRITE FAILED: '+(e&&(e.code||e.message)||'?')); cloudFail(e); console.warn('cloud write failed:',e&&e.message); });
   },400);
+}
+function paintPass(){
+  const st=$('pass-state'); if(!st) return;
+  const has=!!encKey, online=lastRemote&&lastRemote.enc;
+  $('pass-row').hidden=has;
+  $('pass-set').textContent=online?'Unlock':'Set passphrase';
+  st.textContent=has?'Notes are scrambled with your passphrase before they leave this device. This device remembers it.'
+    :online?'Your notes online are scrambled. Type your passphrase once and this device can sync.'
+    :'Choose a passphrase. Notes are scrambled with it before they go online, so nobody else can read them. You type it once per device.';
+}
+async function passSet(){
+  const p=$('pass').value;
+  if(passBusy) return;
+  if(p.length<8){ flash('Use at least 8 characters.'); return; }
+  if(!cloudRef||lastRemote===undefined){ flash('Get online first, so this device can check the online copy.'); return; }
+  passBusy=true; $('pass-set').textContent='Working…';
+  try{
+    const remote=lastRemote;
+    if(remote&&remote.enc){                                          // joining: must open what is already there
+      const k=await deriveKey(p,remote.enc.salt); let plain;
+      try{ plain=await unseal(remote.enc,k); }catch(e){ log('pass','wrong passphrase'); flash('That passphrase doesn’t open your notes online. Check it and try again.'); return; }
+      encKey=k; encSalt=remote.enc.salt; await keySave(); cloudSeen=remote.rev||0;
+      log('pass','unlocked on this device');
+      if(takeCopy(plain,'took the online copy')){ rev=Date.now(); STORE.set(APP.key,JSON.stringify(snap())); cloudPush(); }
+    }else{                                                           // first device: make the key, replace whatever is online
+      encSalt=b64e(crypto.getRandomValues(new Uint8Array(16))); encKey=await deriveKey(p,encSalt); await keySave();
+      log('pass','passphrase set on this device');
+      if(remote) takeCopy(remote,'took the unprotected online copy before replacing it');
+      rev=Date.now(); STORE.set(APP.key,JSON.stringify(snap())); cloudPush();
+    }
+    $('pass').value=''; cloudSay('live'); flash('Passphrase set. Notes are scrambled before they leave this device.');
+  }catch(e){ log('ERROR','passphrase: '+(e&&e.message)); flash('That didn’t work. Try again.'); }
+  finally{ passBusy=false; paintPass(); }
 }
 
 /* ---- settings ---- */
@@ -1852,7 +1937,7 @@ function drawLinks(){
   $('logcount').textContent=actlog.length
     ? actlog.length+' of '+LOG_MAX+' entries, '+Math.round(packLog(actlog).length/1024)+' KB, on device '+devId+'.' : 'No activity recorded yet.';
 }
-$('gear').addEventListener('click',()=>{ drawLinks(); drawPrefs(); ghPaint(); wipeDisarm(); show('sheet-set'); $('sheet-set').scrollTop=0; });
+$('gear').addEventListener('click',()=>{ drawLinks(); drawPrefs(); ghPaint(); paintPass(); wipeDisarm(); show('sheet-set'); $('sheet-set').scrollTop=0; });
 
 function download(name,text,type){
   const a=document.createElement('a');
@@ -1887,6 +1972,8 @@ $('imp-file').addEventListener('change',e=>{
   }catch(err){ flash('That file could not be read.'); } };
   r.readAsText(f); e.target.value='';
 });
+$('pass-set').addEventListener('click',passSet);
+$('pass').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); passSet(); } });
 $('send-log').addEventListener('click',()=>sendLog(true,false));
 $('gh-save').addEventListener('click',async()=>{
   const t=$('gh-token').value.trim(); $('gh-token').value='';
