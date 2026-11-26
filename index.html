@@ -545,7 +545,7 @@
   <div class="lab">Links</div>
   <div class="stack" id="links"></div>
 
-  <p class="buildstamp" id="build">Build 11</p>
+  <p class="buildstamp" id="build">Build 12</p>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
@@ -558,7 +558,7 @@ const APP={
   title:   'Notes',               // shown in the header
   key:     'notes-v1',            // local storage key, unique per app
   dbPath:  'notes/main',          // Firebase branch, unique per app
-  build:   'Build 11 · 26 Nov 2026',
+  build:   'Build 12 · 26 Nov 2026',
   links:[                         // shown in settings
     {label:'Stored data',       url:'https://console.firebase.google.com/project/shopping-eb9b3/database/shopping-eb9b3-default-rtdb/data/~2Fnotes~2Fmain'},
     {label:'Firebase console',  url:'https://console.firebase.google.com/project/shopping-eb9b3/overview'},
@@ -661,9 +661,18 @@ function containsWord(text,word){
 const LINK_SRC='(?:https?:\\/\\/|www\\.)[^\\s<>"\']+';
 const LINK_RE=new RegExp(LINK_SRC,'i');
 const hasLink=t=>LINK_RE.test(String(t));
-/* A checklist is two or more lines that start with a bullet, a box or a number. */
+/* A list is a note that is mostly items. Lines that start with a bullet, a box or a number are items.
+   It counts when nearly every line is an item, or when most lines are and the items are short.
+   A reflection with a few bullets, or two numbered paragraphs, is not a list. A 500-line packing list is. */
 const LIST_RE=/^\s*(?:[-*•]\s+\S|\[[ xX]?\]\s*\S|[☐☑☒]\s*\S|\d{1,3}[.)]\s+\S)/;
-const isChecklist=t=>String(t).split('\n').filter(l=>LIST_RE.test(l)).length>=2;
+function isChecklist(t){
+  const ls=String(t).split('\n').map(l=>l.trim()).filter(Boolean);
+  if(ls.length<2) return false;
+  const body=LIST_RE.test(ls[0])?ls:ls.slice(1), items=body.filter(l=>LIST_RE.test(l));    // the first line may be a title
+  if(items.length<2) return false;
+  const share=items.length/body.length, mid=items.map(l=>l.length).sort((a,b)=>a-b)[Math.floor(items.length/2)];
+  return (share>=0.9&&mid<=220)||(share>=0.6&&mid<=80);
+}
 
 function ruleMatches(r,text){
   if(r.cond==='link') return hasLink(text);
