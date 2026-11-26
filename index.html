@@ -180,6 +180,9 @@
     border-radius:12px;padding:11px 12px;background:var(--tile);max-height:30vh;overflow:auto;}
   .otext del{background:#F6D9D0;color:#8A3B22;text-decoration:line-through;border-radius:3px;}
   .otext ins{background:#D5EBDD;color:#1F6B46;text-decoration:underline;border-radius:3px;}
+  .check{margin:14px 2px 0;padding:10px 12px;border-radius:12px;font-size:14.5px;font-weight:500;border:1px solid var(--line);}
+  .check.good{background:#E3F0E8;border-color:#BCDCC8;color:#1F6B46;}
+  .check.bad{background:#F8E6DF;border-color:#EBC4B5;color:#8A3B22;}
   .note.orig .ncard{background:var(--tile);}
   .swatches{display:flex;flex-wrap:wrap;gap:10px;}
   .swatch{width:38px;height:38px;border-radius:50%;border:3px solid var(--surface);background:var(--tc);cursor:pointer;
@@ -370,6 +373,11 @@
     <div class="lab">The note now</div>
     <div class="otext" id="orig-b"></div>
   </div>
+  <div id="orig-lost">
+    <div class="lab">No longer in any note</div>
+    <div class="otext" id="orig-lost-list"></div>
+    <div class="stack" style="margin-top:8px"><button class="btn" id="orig-ok">That’s fine, I dropped it on purpose</button></div>
+  </div>
   <div class="actions">
     <button class="btn" id="orig-open">Open the note</button>
     <button class="btn" id="orig-copy">Copy original</button>
@@ -494,7 +502,7 @@
   <div class="lab">Links</div>
   <div class="stack" id="links"></div>
 
-  <p class="buildstamp" id="build">Build 6</p>
+  <p class="buildstamp" id="build">Build 7</p>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
@@ -507,7 +515,7 @@ const APP={
   title:   'Notes',               // shown in the header
   key:     'notes-v1',            // local storage key, unique per app
   dbPath:  'notes/main',          // Firebase branch, unique per app
-  build:   'Build 6 · 25 Nov 2026',
+  build:   'Build 7 · 25 Nov 2026',
   links:[                         // shown in settings
     {label:'Stored data',       url:'https://console.firebase.google.com/project/shopping-eb9b3/database/shopping-eb9b3-default-rtdb/data/~2Fnotes~2Fmain'},
     {label:'Firebase console',  url:'https://console.firebase.google.com/project/shopping-eb9b3/overview'},
@@ -731,7 +739,7 @@ function drawTabs(){
   const keep=box.scrollLeft; let h='';
   if(ui.view==='orig'){
     const os=liveOrig(), c={same:0,changed:0,gone:0}; os.forEach(o=>{ c[origStatus(o)]++; });
-    h=tabHTML('all','All',os.length,ui.otab==='all','plain')+tabHTML('changed','Changed',c.changed,ui.otab==='changed','plain')+
+    h=tabHTML('all','All',os.length,ui.otab==='all','plain')+tabHTML('lost','Missing text',checkLost(),ui.otab==='lost','plain')+tabHTML('changed','Changed',c.changed,ui.otab==='changed','plain')+
       tabHTML('same','Unchanged',c.same,ui.otab==='same','plain')+tabHTML('gone','Note deleted',c.gone,ui.otab==='gone','plain');
   }else if(ui.view==='archive'){
     h=tabHTML('archived','Archived',data.notes.filter(n=>n.archived&&!n.trashed).length,ui.arch==='archived','plain')+
@@ -1407,7 +1415,7 @@ function freeze(notes){
   const now=Date.now(); let made=0;
   notes.forEach(n=>{
     if(!n||!n.text.trim()||origById(n.id)) return;
-    const o={id:n.id,text:n.text,labels:n.labels.map(labelById).filter(Boolean).map(l=>l.name),created:n.created,at:now,del:false,u:now};
+    const o={id:n.id,text:n.text,labels:n.labels.map(labelById).filter(Boolean).map(l=>l.name),created:n.created,at:now,ok:false,del:false,u:now};
     const i=data.originals.findIndex(x=>x.id===n.id); if(i>=0) data.originals[i]=o; else data.originals.push(o);
     made++;
   });
@@ -1419,18 +1427,32 @@ function freezeNow(){
   if(made) save();
   draw(); flash(made?'Saved '+plural(made,'original','originals')+'. They can’t be edited.':'Every note already has an original.');
 }
+/* The safety check: is every line of every original still in some note?
+   Combining and moving keep the words, so they pass. Anything that vanished shows up here. */
+const plainLine=t=>lc(t).replace(/^\s*(?:[-*\u2022]\s+)?(?:\[[ xX]?\]\s*)?/,'').replace(/\s+/g,' ').trim();
+let lostMap={};
+function checkLost(){
+  const hay=data.notes.filter(n=>!n.trashed).map(n=>n.text.split('\n').map(plainLine).join(' '));
+  lostMap={};
+  liveOrig().forEach(o=>{
+    const miss=o.text.split('\n').filter(l=>{ const k=plainLine(l); return k.length>=3&&!hay.some(h=>h.includes(k)); });
+    if(miss.length) lostMap[o.id]=miss;
+  });
+  return liveOrig().filter(o=>lostMap[o.id]&&!o.ok).length;
+}
 const ORIG_WORD={same:'Unchanged',changed:'Changed',gone:'Note deleted'};
 function origCardHTML(o){
-  const st=origStatus(o), tags=o.labels.map(l=>'<span class="tag">'+esc(l)+'</span>').join('');
-  return '<article class="note orig'+(st==='gone'?' unsorted':'')+'" data-oid="'+esc(o.id)+'" tabindex="0"'+(st==='changed'?' style="--tc:#C98A14"':'')+'>'+
-    '<div class="ntab'+(st==='changed'?' tint':'')+'">'+ORIG_WORD[st]+'</div>'+
+  const miss=!!lostMap[o.id]&&!o.ok, st=origStatus(o), tags=o.labels.map(l=>'<span class="tag">'+esc(l)+'</span>').join('');
+  return '<article class="note orig'+(st==='gone'?' unsorted':'')+'" data-oid="'+esc(o.id)+'" tabindex="0"'+(miss?' style="--tc:#A8603C"':st==='changed'?' style="--tc:#C98A14"':'')+'>'+
+    '<div class="ntab'+(miss||st==='changed'?' tint':'')+'">'+(miss?'Missing text':ORIG_WORD[st])+'</div>'+
     '<div class="ncard"><div class="ntext">'+esc(o.text.length>700?o.text.slice(0,700)+'…':o.text)+'</div>'+(tags?'<div class="nlabels">'+tags+'</div>':'')+'</div></article>';
 }
 function drawOrig(){
-  const terms=queryTerms(), all=liveOrig(), wait=noOrigYet().length;
-  const list=all.filter(o=>(ui.otab==='all'||origStatus(o)===ui.otab)&&(!terms.length||terms.every(q=>lc(o.text+'\n'+o.labels.join('\n')).includes(q))))
+  const terms=queryTerms(), all=liveOrig(), wait=noOrigYet().length, lost=checkLost();
+  const list=all.filter(o=>(ui.otab==='all'||(ui.otab==='lost'?(!!lostMap[o.id]&&!o.ok):origStatus(o)===ui.otab))&&(!terms.length||terms.every(q=>lc(o.text+'\n'+o.labels.join('\n')).includes(q))))
     .sort((x,y)=>(y.created-x.created)||(x.id<y.id?1:-1));
   let h='';
+  if(all.length) h+='<p class="check '+(lost?'bad':'good')+'">'+(lost?plural(lost,'original has','originals have')+' text that is no longer in any note.':'Nothing lost. Every line of your '+plural(all.length,'original','originals')+' is still in a note.')+'</p>';
   if(wait) h+='<div class="bar"><p>'+plural(wait,'note has','notes have')+' no original saved.</p><button class="btn small" data-act="freeze">Save '+(wait===1?'it':'them')+'</button></div>';
   if(!all.length&&!wait) h+='<div class="empty"><b>No originals yet</b>An original is a locked copy of a note. Once it is saved, you can change the note freely and always compare it with how it started.</div>';
   else if(!all.length) h+='<div class="empty"><b>No originals yet</b>Saving them makes a locked copy of every note, so you can change, combine and reorganise freely and always compare with how each one started.</div>';
@@ -1475,12 +1497,16 @@ function fillOrig(){
   else if(st==='gone'){ $('orig-a').textContent=o.text; meta+=' Its note has been deleted.'; }
   else{ const d=diffWords(o.text,n.text); $('orig-a').innerHTML=d.a; $('orig-b').innerHTML=d.b;
     meta+=' Since then: '+plural(d.out,'word','words')+' taken out (struck through), '+plural(d.in,'word','words')+' added (underlined).'; }
+  checkLost(); const miss=lostMap[o.id]||[];
+  $('orig-lost').hidden=!miss.length;
+  if(miss.length){ $('orig-lost-list').textContent=miss.join('\n'); $('orig-ok').textContent=o.ok?'Count this as missing again':'That’s fine, I dropped it on purpose'; }
   $('orig-meta').textContent=meta;
   $('orig-now').hidden=st!=='changed';
   $('orig-open').hidden=st==='gone';
   const rv=$('orig-revert'); rv.hidden=st==='same'; rv.textContent=st==='gone'?'Bring it back as a note':'Put the original back';
 }
 $('orig-done').addEventListener('click',closeSheets);
+$('orig-ok').addEventListener('click',()=>{ const o=origById(curOrig); if(!o) return; o.ok=!o.ok; o.u=Date.now(); log('originals',(o.ok?'accepted':'un-accepted')+' missing text on "'+clip(o.text,40)+'"'); save(); fillOrig(); });
 $('orig-open').addEventListener('click',()=>{ const id=curOrig; if(noteById(id)) openNote(id); });
 $('orig-copy').addEventListener('click',()=>{
   const o=origById(curOrig); if(!o) return;
@@ -1718,6 +1744,7 @@ let openedAt=Date.now(), awayAt=0, leftAt=0;
 const BLIP=1500;            // Android flickers the page hidden and back on launch
 function logOpen(){
   const live=data.notes.filter(n=>!n.archived&&!n.trashed);
+  if(liveOrig().length){ const lost=checkLost(); log('originals','check: '+(lost?lost+' with text no longer in any note':'nothing lost')+' · '+liveOrig().length+' originals'); }
   log('app','opened · '+APP.build+' · '+devLabel()+' · '+(innerWidth?innerWidth+'×'+innerHeight:'started in the background')+' · '+(navigator.onLine?'online':'offline')+
     ' · '+plural(live.length,'note','notes')+', '+live.filter(n=>!typeOf(n)).length+' Unsorted, '+plural(liveRules().length,'rule','rules')+', '+plural(liveTypes().length,'type','types')+', '+plural(liveLabels().length,'label','labels'));
 }
@@ -1857,7 +1884,7 @@ function normalize(d){
       pos:+r.pos||0,del:!!r.del,u:+r.u||0})),
     labels:arr(d.labels).filter(l=>l&&l.id).map(l=>({id:String(l.id),name:String(l.name||'Label'),del:!!l.del,u:+l.u||0})),
     originals:arr(d.originals).filter(o=>o&&o.id).map(o=>({id:String(o.id),text:o.text==null?'':String(o.text),labels:arr(o.labels).map(String),
-      created:+o.created||0,at:+o.at||0,del:!!o.del,u:+o.u||0})),
+      created:+o.created||0,at:+o.at||0,ok:!!o.ok,del:!!o.del,u:+o.u||0})),
     gone:gone
   };
 }
