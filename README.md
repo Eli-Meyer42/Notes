@@ -98,6 +98,10 @@ The app and Claude exchange two files in the private repo
     { "id": "r3-8", "kind": "label", "name": "Errands" } ] }
 ```
 
+Any item may carry `"drops": ["a line"]`: lines removed on purpose (a
+header, say), which the nothing-lost check then stops counting for those
+notes.
+
 Item ids must be unique for ever (prefix them with the round). `seen` is each
 note's `updated` from `notes.json`, so the app can warn if a note changed
 since. `combine` keeps the first source and moves the others to the trash.

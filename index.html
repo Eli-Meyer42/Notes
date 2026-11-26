@@ -528,7 +528,7 @@
   <div class="lab">Links</div>
   <div class="stack" id="links"></div>
 
-  <p class="buildstamp" id="build">Build 8</p>
+  <p class="buildstamp" id="build">Build 9</p>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
@@ -541,7 +541,7 @@ const APP={
   title:   'Notes',               // shown in the header
   key:     'notes-v1',            // local storage key, unique per app
   dbPath:  'notes/main',          // Firebase branch, unique per app
-  build:   'Build 8 · 25 Nov 2026',
+  build:   'Build 9 · 26 Nov 2026',
   links:[                         // shown in settings
     {label:'Stored data',       url:'https://console.firebase.google.com/project/shopping-eb9b3/database/shopping-eb9b3-default-rtdb/data/~2Fnotes~2Fmain'},
     {label:'Firebase console',  url:'https://console.firebase.google.com/project/shopping-eb9b3/overview'},
@@ -1447,7 +1447,7 @@ function freeze(notes){
   const now=Date.now(); let made=0;
   notes.forEach(n=>{
     if(!n||!n.text.trim()||origById(n.id)) return;
-    const o={id:n.id,text:n.text,labels:n.labels.map(labelById).filter(Boolean).map(l=>l.name),created:n.created,at:now,ok:false,del:false,u:now};
+    const o={id:n.id,text:n.text,labels:n.labels.map(labelById).filter(Boolean).map(l=>l.name),created:n.created,at:now,ok:false,skip:[],del:false,u:now};
     const i=data.originals.findIndex(x=>x.id===n.id); if(i>=0) data.originals[i]=o; else data.originals.push(o);
     made++;
   });
@@ -1467,7 +1467,8 @@ function checkLost(){
   const hay=data.notes.filter(n=>!n.trashed).map(n=>n.text.split('\n').map(plainLine).join(' '));
   lostMap={};
   liveOrig().forEach(o=>{
-    const miss=o.text.split('\n').filter(l=>{ const k=plainLine(l); return k.length>=3&&!hay.some(h=>h.includes(k)); });
+    const skip=o.skip||[];
+    const miss=o.text.split('\n').filter(l=>{ const k=plainLine(l); return k.length>=3&&!skip.includes(k)&&!hay.some(h=>h.includes(k)); });
     if(miss.length) lostMap[o.id]=miss;
   });
   return liveOrig().filter(o=>lostMap[o.id]&&!o.ok).length;
@@ -1642,6 +1643,7 @@ function propHTML(it){
   else if(it.kind==='split'){ b+=src(it.note)+'<div class="plab">Becomes '+plural((it.parts||[]).length,'note','notes')+'</div>'+(it.parts||[]).map(t=>'<div class="otext" style="margin-bottom:6px">'+esc(t)+'</div>').join(''); }
   else if(it.kind==='rule'){ b+='<div class="otext">If a note '+esc(ruleText({cond:it.cond,words:it.words||[]}))+', file it as '+esc(it.type||'?')+(it.label?' and add the label '+esc(it.label):'')+(it.pin?' and pin it':'')+(it.first?'. Goes first in the list.':'. Goes last in the list.')+'</div>'; }
   else if(it.kind==='type'||it.kind==='label'){ b+='<div class="otext">'+esc(it.name||'')+'</div>'; }
+  if(Array.isArray(it.drops)&&it.drops.length) b+='<div class="plab">Dropped on purpose</div>'+it.drops.map(t=>'<div class="psrc">'+esc(t)+'</div>').join('');
   const filing=(it.kind==='rule'||it.kind==='type'||it.kind==='label')?'':propFiling(it), warn=propWarn(it), blocked=propBlocked(it);
   return '<div class="prop"><h4>'+esc(it.title||PROP_TITLE[it.kind]||'Suggestion')+'</h4>'+(it.why?'<p class="pwhy">'+esc(it.why)+'</p>':'')+b+
     (filing?'<div class="plab">Then</div><div class="psrc">'+esc(filing)+'</div>':'')+(warn?'<p class="pwarn">'+esc(warn)+'</p>':'')+
@@ -1656,6 +1658,7 @@ function applyFiling(n,it,now){
 }
 function applyProp(it){
   const now=Date.now();
+  if(Array.isArray(it.drops)) propIds(it).forEach(id=>{ const o=origById(id); if(!o) return; o.skip=o.skip||[]; it.drops.forEach(t=>{ const k=plainLine(String(t)); if(k&&!o.skip.includes(k)) o.skip.push(k); }); o.u=now; });
   if(it.kind==='combine'){
     const ns=propIds(it).map(noteById), keep=ns[0];
     ns.slice(1).forEach(n=>{ n.labels.forEach(l=>{ if(!keep.labels.includes(l)) keep.labels.push(l); }); n.trashed=true; n.pinned=false; n.updated=now; });
@@ -2064,7 +2067,7 @@ function normalize(d){
       pos:+r.pos||0,del:!!r.del,u:+r.u||0})),
     labels:arr(d.labels).filter(l=>l&&l.id).map(l=>({id:String(l.id),name:String(l.name||'Label'),del:!!l.del,u:+l.u||0})),
     originals:arr(d.originals).filter(o=>o&&o.id).map(o=>({id:String(o.id),text:o.text==null?'':String(o.text),labels:arr(o.labels).map(String),
-      created:+o.created||0,at:+o.at||0,ok:!!o.ok,del:!!o.del,u:+o.u||0})),
+      created:+o.created||0,at:+o.at||0,ok:!!o.ok,skip:arr(o.skip).map(String),del:!!o.del,u:+o.u||0})),
     decided:(()=>{ const o={}; if(d.decided&&typeof d.decided==='object') Object.keys(d.decided).forEach(k=>{ o[k]=d.decided[k]==='n'?'n':'y'; }); return o; })(),
     gone:gone
   };
