@@ -82,6 +82,10 @@
   .nlabels{display:flex;flex-wrap:wrap;gap:5px;margin-top:9px;}
   .tag{font-size:12px;font-weight:500;color:var(--soft);background:var(--tile);border:1px solid var(--line);
     border-radius:7px;padding:1px 7px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .ndate{margin-top:8px;font-size:12px;color:var(--soft);font-variant-numeric:tabular-nums;}
+  .sortrow{display:flex;justify-content:flex-end;margin:12px 2px 0;}
+  .sortbtn{border:none;background:none;padding:4px 2px;font-size:13.5px;font-weight:500;color:var(--soft);cursor:pointer;}
+  .sortbtn b{font-weight:600;color:var(--ink);}
   .empty{margin:46px 12px 0;text-align:center;color:var(--soft);font-size:15.5px;line-height:1.5;}
   .empty b{display:block;color:var(--ink);font-size:18px;font-weight:600;margin-bottom:6px;}
   .bar{display:flex;align-items:center;gap:10px;margin-top:14px;}
@@ -541,7 +545,7 @@
   <div class="lab">Links</div>
   <div class="stack" id="links"></div>
 
-  <p class="buildstamp" id="build">Build 10</p>
+  <p class="buildstamp" id="build">Build 11</p>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
@@ -554,7 +558,7 @@ const APP={
   title:   'Notes',               // shown in the header
   key:     'notes-v1',            // local storage key, unique per app
   dbPath:  'notes/main',          // Firebase branch, unique per app
-  build:   'Build 10 · 26 Nov 2026',
+  build:   'Build 11 · 26 Nov 2026',
   links:[                         // shown in settings
     {label:'Stored data',       url:'https://console.firebase.google.com/project/shopping-eb9b3/database/shopping-eb9b3-default-rtdb/data/~2Fnotes~2Fmain'},
     {label:'Firebase console',  url:'https://console.firebase.google.com/project/shopping-eb9b3/overview'},
@@ -611,7 +615,7 @@ function seedState(u){
   };
 }
 let data=seedState(0);
-let prefs={layout:'grid',autoVoice:false};      // this device only
+let prefs={layout:'grid',autoVoice:false,sort:'new'};      // this device only
 let draft='';                                    // unsaved text in the new-note box, this device only
 const ui={view:'notes',tab:'all',arch:'archived',otab:'all',label:'',q:'',searching:false};
 
@@ -813,7 +817,7 @@ function cardHTML(n){
   const tags=n.labels.map(labelById).filter(Boolean).map(l=>'<span class="tag">'+esc(l.name)+'</span>').join('');
   return '<article class="note'+(t?'':' unsorted')+(n.pinned?' pinned':'')+'" data-id="'+esc(n.id)+'" tabindex="0"'+(t?' style="--tc:'+t.color+'"':'')+'>'+
     '<div class="ntab'+(t?' tint':'')+'">'+esc(t?t.name:'Unsorted')+'</div>'+
-    '<div class="ncard">'+(n.pinned?PIN_SVG:'')+bodyHTML(n)+(tags?'<div class="nlabels">'+tags+'</div>':'')+'</div></article>';
+    '<div class="ncard">'+(n.pinned?PIN_SVG:'')+bodyHTML(n)+(tags?'<div class="nlabels">'+tags+'</div>':'')+'<div class="ndate">'+dayText(n.created)+(prefs.sort==='edit'&&n.updated>n.created+60000?' · edited '+dayText(n.updated):'')+'</div></div></article>';
 }
 let lastCols=0;
 function colCount(){ const w=Math.min(window.innerWidth,660); return (prefs.layout==='list'||w<340)?1:(w<600?2:3); }
@@ -821,7 +825,7 @@ function estH(n,colW){
   const perLine=Math.max(12,Math.floor((colW-26)/7.4)), parts=n.text.split('\n');
   let lines=0;
   for(let i=0;i<parts.length&&lines<13;i++) lines+=Math.max(1,Math.ceil(parts[i].length/perLine));
-  return 50+Math.min(lines,isChecklist(n.text)?13:10)*21.5+(n.labels.length?28:0);
+  return 72+Math.min(lines,isChecklist(n.text)?13:10)*21.5+(n.labels.length?28:0);
 }
 /* Each card goes into whichever column is shortest so far, so newest stays near the top. */
 function gridHTML(list){
@@ -831,7 +835,14 @@ function gridHTML(list){
   list.forEach(n=>{ let c=cols[0]; cols.forEach(x=>{ if(x.h<c.h) c=x; }); c.html+=cardHTML(n); c.h+=estH(n,colW)+12; });
   return '<div class="cols">'+cols.map(c=>'<div class="col">'+c.html+'</div>').join('')+'</div>';
 }
-const sortNotes=a=>a.sort((x,y)=>(y.created-x.created)||(x.id<y.id?1:-1));
+/* new = newest written first, old = oldest written first, edit = most recently changed first */
+const sortNotes=a=>a.sort((x,y)=>(prefs.sort==='old'?(x.created-y.created):prefs.sort==='edit'?(y.updated-x.updated)||(y.created-x.created):(y.created-x.created))||(x.id<y.id?1:-1));
+function dayText(t){
+  if(!t) return '';
+  const d=new Date(t), o={day:'numeric',month:'short'};
+  if(d.getFullYear()!==new Date().getFullYear()) o.year='numeric';
+  try{ return d.toLocaleDateString(undefined,o); }catch(e){ return ''; }
+}
 const queryTerms=()=>lc(ui.q).split(/\s+/).filter(Boolean);
 function matchesQuery(n,terms){
   if(!terms.length) return true;
@@ -843,15 +854,17 @@ const inTab=n=>ui.tab==='all'||(ui.tab==='unsorted'?!typeOf(n):(n.type===ui.tab&
 const inLabel=n=>!ui.label||n.labels.includes(ui.label);
 const secHTML=s=>'<h2 class="sec">'+s+'</h2>';
 
+const SORT_WORD={new:'Newest first',old:'Oldest first',edit:'Recently changed'};
+const sortRowHTML=()=>'<div class="sortrow"><button class="sortbtn" data-act="sort" aria-label="Change the order">Order: <b>'+SORT_WORD[prefs.sort]+'</b></button></div>';
 function drawNotes(){
   const terms=queryTerms();
   const pool=data.notes.filter(n=>!n.trashed&&inTab(n)&&inLabel(n)&&matchesQuery(n,terms));
   const live=sortNotes(pool.filter(n=>!n.archived));
   const pinned=live.filter(n=>n.pinned), rest=live.filter(n=>!n.pinned);
   const arch=terms.length?sortNotes(pool.filter(n=>n.archived)):[];
-  let h='';
+  let h=sortRowHTML();
   { const pn=pendingProps().length; if(pn) h+='<div class="bar"><p>Claude has '+plural(pn,'suggestion','suggestions')+' for you.</p><button class="btn small" data-act="props">Review</button></div>'; }
-  if(!live.length&&!arch.length) h+=emptyNotesHTML(terms);
+  if(!live.length&&!arch.length) h=h.replace(sortRowHTML(),'')+emptyNotesHTML(terms);
   else{
     if(pinned.length) h+=secHTML('Pinned')+gridHTML(pinned);
     if(rest.length) h+=(pinned.length?secHTML('Others'):'')+gridHTML(rest);
@@ -879,6 +892,7 @@ function drawArchive(){
   const terms=queryTerms(), trash=ui.arch==='trash';
   const list=sortNotes(data.notes.filter(n=>(trash?n.trashed:(n.archived&&!n.trashed))&&inLabel(n)&&matchesQuery(n,terms)));
   let h='';
+  if(list.length) h+=sortRowHTML();
   if(trash&&list.length) h+='<div class="bar"><p>Notes stay in the trash until you empty it.</p><button class="btn small" data-act="empty-trash">Empty trash</button></div>';
   if(list.length) h+=gridHTML(list);
   else if(terms.length) h+='<div class="empty"><b>Nothing matches “'+esc(ui.q.trim())+'”</b></div>';
@@ -1387,6 +1401,7 @@ function act(a,id,el){
     case 'note-type': setNoteType(id); break;
     case 'note-label': toggleNoteLabel(id); break;
     case 'note-label-new': $('note-newlabel-row').hidden=false; $('note-newlabel').focus(); break;
+    case 'sort': prefs.sort=prefs.sort==='new'?'old':prefs.sort==='old'?'edit':'new'; savePrefs(); log('setting','order: '+SORT_WORD[prefs.sort]); window.scrollTo(0,0); draw(); break;
     case 'freeze': freezeNow(); break;
     case 'props': openProps(); break;
     case 'prop-yes': decideProp(id,true); break;
@@ -1496,7 +1511,7 @@ function origCardHTML(o){
   const miss=!!lostMap[o.id]&&!o.ok, st=origStatus(o), tags=o.labels.map(l=>'<span class="tag">'+esc(l)+'</span>').join('');
   return '<article class="note orig'+(st==='gone'?' unsorted':'')+'" data-oid="'+esc(o.id)+'" tabindex="0"'+(miss?' style="--tc:#A8603C"':st==='changed'?' style="--tc:#C98A14"':'')+'>'+
     '<div class="ntab'+(miss||st==='changed'?' tint':'')+'">'+(miss?'Missing text':ORIG_WORD[st])+'</div>'+
-    '<div class="ncard"><div class="ntext">'+esc(o.text.length>700?o.text.slice(0,700)+'…':o.text)+'</div>'+(tags?'<div class="nlabels">'+tags+'</div>':'')+'</div></article>';
+    '<div class="ncard"><div class="ntext">'+esc(o.text.length>700?o.text.slice(0,700)+'…':o.text)+'</div>'+(tags?'<div class="nlabels">'+tags+'</div>':'')+'<div class="ndate">'+dayText(o.created)+'</div></div></article>';
 }
 function drawOrig(){
   const terms=queryTerms(), all=liveOrig(), wait=noOrigYet().length, lost=checkLost();
@@ -2008,7 +2023,7 @@ addEventListener('unhandledrejection',e=>log('ERROR','unhandled: '+((e.reason&&(
 /* what is on screen: logged when the screen, tab, filter or scroll position changes */
 let viewKey='';
 function logView(){
-  const k=[ui.view,ui.tab,ui.arch,ui.otab,ui.label,ui.q?1:0,prefs.layout].join('|');
+  const k=[ui.view,ui.tab,ui.arch,ui.otab,prefs.sort,ui.label,ui.q?1:0,prefs.layout].join('|');
   if(k===viewKey) return; viewKey=k;
   log('view','showing'+where()+' · '+plural(document.querySelectorAll('#main .note').length,'note','notes')+' drawn · '+prefs.layout);
 }
