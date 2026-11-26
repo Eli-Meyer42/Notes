@@ -70,3 +70,36 @@ the activity log stay on the device and are not synced.
 - **Text is verbatim.** Nothing should rewrite a note's text except the person
   editing it or ticking a checklist line.
 - The Firebase config is meant to be public. Security comes from the rules.
+
+## Working with Claude
+
+The app and Claude exchange two files in the private repo
+`Eli-Meyer42/shopping-logs`, under `notes/share/`:
+
+- `notes.json`: written by the app (**Send notes to Claude**, and again after
+  suggestions are handled). A readable copy of every note with its id, text,
+  type, labels, flags and `updated` time, plus the rules, types, labels, the
+  nothing-lost result (`missingText`) and `decided`.
+- `proposals.json`: written by Claude. The app shows each item and applies it
+  only on **Yes**. Shape:
+
+```json
+{ "id": "r3", "note": "One line shown above the list.",
+  "items": [
+    { "id": "r3-1", "kind": "combine", "title": "…", "why": "…",
+      "sources": ["noteId", "noteId"], "text": "the combined text",
+      "type": "To-do", "labels": ["Home"], "seen": { "noteId": 1764000000000 } },
+    { "id": "r3-2", "kind": "edit",  "note": "noteId", "text": "new text" },
+    { "id": "r3-3", "kind": "file",  "note": "noteId", "type": "Idea", "labels": ["Work"], "pinned": true, "archived": false },
+    { "id": "r3-4", "kind": "trash", "note": "noteId" },
+    { "id": "r3-5", "kind": "split", "note": "noteId", "parts": ["first", "second"] },
+    { "id": "r3-6", "kind": "rule",  "cond": "starts|contains|link|checklist", "words": ["call"], "type": "To-do", "label": "", "pin": false, "first": true },
+    { "id": "r3-7", "kind": "type",  "name": "Appointment" },
+    { "id": "r3-8", "kind": "label", "name": "Errands" } ] }
+```
+
+Item ids must be unique for ever (prefix them with the round). `seen` is each
+note's `updated` from `notes.json`, so the app can warn if a note changed
+since. `combine` keeps the first source and moves the others to the trash.
+`type` and `labels` are names; missing ones are created. Keep the words of
+the notes when combining, so the nothing-lost check stays green.

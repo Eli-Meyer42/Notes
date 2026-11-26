@@ -180,6 +180,14 @@
     border-radius:12px;padding:11px 12px;background:var(--tile);max-height:30vh;overflow:auto;}
   .otext del{background:#F6D9D0;color:#8A3B22;text-decoration:line-through;border-radius:3px;}
   .otext ins{background:#D5EBDD;color:#1F6B46;text-decoration:underline;border-radius:3px;}
+  .prop{border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px;background:var(--surface);}
+  .prop h4{margin:0 0 3px;font-size:15.5px;font-weight:600;}
+  .prop .pwhy{margin:0 0 9px;font-size:14px;color:var(--soft);}
+  .prop .plab{font-size:12.5px;font-weight:600;color:var(--soft);margin:9px 2px 4px;}
+  .prop .otext{max-height:22vh;font-size:14.5px;}
+  .prop .psrc{font-size:14px;color:var(--soft);padding:2px 0 2px 10px;border-left:2px solid var(--line);margin:3px 0;}
+  .prop .pwarn{font-size:13.5px;color:#8A3B22;margin:8px 0 0;}
+  .prop .actions{margin-top:11px;}
   .check{margin:14px 2px 0;padding:10px 12px;border-radius:12px;font-size:14.5px;font-weight:500;border:1px solid var(--line);}
   .check.good{background:#E3F0E8;border-color:#BCDCC8;color:#1F6B46;}
   .check.bad{background:#F8E6DF;border-color:#EBC4B5;color:#8A3B22;}
@@ -362,6 +370,17 @@
   <button class="btn primary wide" id="note-done">Done</button>
 </div>
 
+<!-- suggestions from Claude, approved one by one -->
+<div class="sheet" id="sheet-props" role="dialog" aria-modal="true" aria-label="Suggestions">
+  <div class="grab"></div>
+  <h3>Claude’s suggestions</h3>
+  <p id="props-note"></p>
+  <div id="props-check"></div>
+  <div id="props-list"></div>
+  <div class="stack" style="margin-top:6px"><button class="btn" id="props-all">Yes to all</button></div>
+  <button class="btn primary wide" id="props-done">Done</button>
+</div>
+
 <!-- an original, and how the note differs from it -->
 <div class="sheet" id="sheet-orig" role="dialog" aria-modal="true" aria-label="Original">
   <div class="grab"></div>
@@ -472,6 +491,13 @@
     <input type="file" id="imp-file" accept=".json" style="display:none">
   </div>
 
+  <div class="lab">Work with Claude</div>
+  <p style="margin-bottom:9px" id="share-state">Send a readable copy of your notes to your private GitHub repo so Claude can read them in chat. Suggestions come back here for you to approve.</p>
+  <div class="stack">
+    <button class="btn" id="share-send">Send notes to Claude</button>
+    <button class="btn" id="share-check">Check for suggestions</button>
+  </div>
+
   <div class="lab">Import from Google Keep</div>
   <p style="margin-bottom:9px" id="keep-state">Pick the .zip file from Google Takeout. Nothing is added until you confirm.</p>
   <div class="stack">
@@ -502,7 +528,7 @@
   <div class="lab">Links</div>
   <div class="stack" id="links"></div>
 
-  <p class="buildstamp" id="build">Build 7</p>
+  <p class="buildstamp" id="build">Build 8</p>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
@@ -515,7 +541,7 @@ const APP={
   title:   'Notes',               // shown in the header
   key:     'notes-v1',            // local storage key, unique per app
   dbPath:  'notes/main',          // Firebase branch, unique per app
-  build:   'Build 7 · 25 Nov 2026',
+  build:   'Build 8 · 25 Nov 2026',
   links:[                         // shown in settings
     {label:'Stored data',       url:'https://console.firebase.google.com/project/shopping-eb9b3/database/shopping-eb9b3-default-rtdb/data/~2Fnotes~2Fmain'},
     {label:'Firebase console',  url:'https://console.firebase.google.com/project/shopping-eb9b3/overview'},
@@ -567,6 +593,7 @@ function seedState(u){
     ],
     labels:[],
     originals:[],
+    decided:{},
     gone:{}
   };
 }
@@ -711,6 +738,7 @@ function draw(){
   if(openId==='sheet-note') fillNote(false);
   if(openId==='sheet-labels') drawLabels();
   if(openId==='sheet-orig') fillOrig();
+  if(openId==='sheet-props') fillProps();
   logView();
 }
 function drawChrome(){
@@ -809,7 +837,8 @@ function drawNotes(){
   const pinned=live.filter(n=>n.pinned), rest=live.filter(n=>!n.pinned);
   const arch=terms.length?sortNotes(pool.filter(n=>n.archived)):[];
   let h='';
-  if(!live.length&&!arch.length) h=emptyNotesHTML(terms);
+  { const pn=pendingProps().length; if(pn) h+='<div class="bar"><p>Claude has '+plural(pn,'suggestion','suggestions')+' for you.</p><button class="btn small" data-act="props">Review</button></div>'; }
+  if(!live.length&&!arch.length) h+=emptyNotesHTML(terms);
   else{
     if(pinned.length) h+=secHTML('Pinned')+gridHTML(pinned);
     if(rest.length) h+=(pinned.length?secHTML('Others'):'')+gridHTML(rest);
@@ -1346,6 +1375,9 @@ function act(a,id,el){
     case 'note-label': toggleNoteLabel(id); break;
     case 'note-label-new': $('note-newlabel-row').hidden=false; $('note-newlabel').focus(); break;
     case 'freeze': freezeNow(); break;
+    case 'props': openProps(); break;
+    case 'prop-yes': decideProp(id,true); break;
+    case 'prop-no': decideProp(id,false); break;
     case 'add-rule': openRule(''); break;
     case 'edit-rule': openRule(id); break;
     case 'rule-up': moveRule(id,-1); break;
@@ -1528,6 +1560,154 @@ $('orig-revert').addEventListener('click',()=>{
 });
 $('note-compare').addEventListener('click',()=>{ const id=cur; commitNoteText(); if(origById(id)) openOrig(id); });
 onClose['sheet-orig']=()=>{ curOrig=null; draw(); };
+
+/* ---- working with Claude, through the private GitHub repo ----
+   Out: a readable copy of the notes (share/notes.json), sent when asked and after suggestions are handled.
+   In:  suggestions (share/proposals.json) written by Claude in chat. Nothing is applied without a Yes. */
+const PROPS_KEY=APP.key+'-props';
+let props=null, propsChanged=false;
+const ghApi=path=>'https://api.github.com/repos/'+ghRepo+'/contents/'+path;
+const sharePath=name=>GH_FOLDER+'/share/'+name;
+async function ghPutFile(path,text,msg){
+  const head={Authorization:'Bearer '+ghTok,Accept:'application/vnd.github+json'};
+  let sha;
+  const g=await fetch(ghApi(path),{headers:head,cache:'no-store'});
+  if(g.ok) sha=(await g.json()).sha; else if(g.status!==404) throw new Error(g.status===401?'the token was refused':'GitHub answered '+g.status);
+  const body={message:msg,content:b64(text)}; if(sha) body.sha=sha;
+  const r=await fetch(ghApi(path),{method:'PUT',headers:head,body:JSON.stringify(body)});
+  if(!r.ok) throw new Error(r.status===401?'the token was refused':'GitHub answered '+r.status);
+}
+function shareDoc(){
+  const names=ids=>ids.map(labelById).filter(Boolean).map(l=>l.name), rs=liveRules(), lost=liveOrig().length?checkLost():0;
+  return {app:APP.title,build:APP.build,device:devLabel(),sentAt:new Date().toISOString(),
+    counts:{notes:data.notes.filter(n=>!n.trashed).length,trashed:data.notes.filter(n=>n.trashed).length,originals:liveOrig().length,originalsMissingText:lost},
+    types:liveTypes().map(t=>t.name),labels:liveLabels().map(l=>l.name),
+    rules:rs.map((r,i)=>({n:i+1,on:r.on,cond:r.cond,words:r.words,type:(typeById(r.type)||{name:'?'}).name,label:(labelById(r.label)||{name:''}).name,pin:r.pin})),
+    notes:data.notes.map(n=>({id:n.id,text:n.text,type:typeName(n),typeBy:n.typeBy||'none',rule:n.typeBy==='rule'?rs.findIndex(r=>r.id===n.rule)+1:0,labels:names(n.labels),
+      pinned:n.pinned,archived:n.archived,trashed:n.trashed,created:n.created,updated:n.updated,src:n.src,
+      original:origById(n.id)?(origById(n.id).text===n.text?'same':'changed'):'none'})),
+    missingText:Object.keys(lostMap).map(id=>({original:id,accepted:!!(origById(id)||{}).ok,lines:lostMap[id]})),
+    decided:data.decided};
+}
+function sharePaint(msg){ const el=$('share-state'); if(el&&msg) el.textContent=msg; }
+async function shareSend(manual){
+  if(!ghTok){ if(manual) flash('This needs the GitHub token. Paste one under Activity log.'); return false; }
+  if(manual) sharePaint('Sending…');
+  try{
+    const doc=shareDoc();
+    await ghPutFile(sharePath('notes.json'),JSON.stringify(doc,null,1),'notes: '+doc.counts.notes+' notes from '+devId);
+    log('share','sent '+doc.counts.notes+' notes for Claude to read');
+    sharePaint('Sent '+plural(doc.counts.notes,'note','notes')+' at '+fmtDate(Date.now())+'. Tell Claude in chat that they’re ready.');
+    if(manual) flash('Sent '+plural(doc.counts.notes,'note','notes')+'. Tell Claude they’re ready.');
+    return true;
+  }catch(e){ log('share','SEND FAILED: '+(e&&e.message)); sharePaint('Not sent: '+(e&&e.message||'no connection')+'.'); if(manual) flash('Not sent: '+(e&&e.message||'no connection')+'.'); return false; }
+}
+const pendingProps=()=>(props&&Array.isArray(props.items))?props.items.filter(i=>i&&i.id&&i.kind&&!data.decided[i.id]):[];
+async function propsCheck(manual){
+  if(!ghTok){ if(manual) flash('This needs the GitHub token. Paste one under Activity log.'); return; }
+  try{
+    const r=await fetch(ghApi(sharePath('proposals.json')),{headers:{Authorization:'Bearer '+ghTok,Accept:'application/vnd.github.raw+json'},cache:'no-store'});
+    if(r.status===404){ if(manual) flash('No suggestions yet.'); return; }
+    if(!r.ok) throw new Error('GitHub answered '+r.status);
+    const j=await r.json();
+    if(!j||!Array.isArray(j.items)) throw new Error('the suggestions file is not in the expected shape');
+    props=j; try{ STORE.set(PROPS_KEY,JSON.stringify(j)); }catch(e){}
+    const n=pendingProps().length;
+    log('share','checked suggestions: '+j.items.length+' in the file, '+n+' waiting');
+    if(manual){ if(n){ openProps(); } else flash('No new suggestions.'); } else draw();
+  }catch(e){ log('share','CHECK FAILED: '+(e&&e.message)); if(manual) flash('Couldn’t check: '+(e&&e.message||'no connection')+'.'); }
+}
+const propIds=it=>Array.isArray(it.sources)?it.sources:(it.note?[it.note]:[]);
+function propWarn(it){
+  const ids=propIds(it);
+  if(ids.some(id=>!noteById(id))) return 'A note this refers to no longer exists, so it can’t be applied.';
+  if(it.seen&&ids.some(id=>it.seen[id]&&noteById(id).updated>it.seen[id])) return 'A note here has changed since Claude read it. Check the preview before saying yes.';
+  return '';
+}
+const propBlocked=it=>propIds(it).some(id=>!noteById(id))||(it.kind==='combine'&&propIds(it).length<2)||((it.kind==='combine'||it.kind==='edit')&&!String(it.text||'').trim());
+function propFiling(it){
+  const bits=[];
+  if(it.type) bits.push('file as '+it.type);
+  if(Array.isArray(it.labels)&&it.labels.length) bits.push('label '+it.labels.join(', '));
+  if(it.pinned===true) bits.push('pin'); if(it.archived===true) bits.push('archive'); if(it.archived===false) bits.push('unarchive');
+  return bits.join(' · ');
+}
+const PROP_TITLE={combine:'Combine notes',edit:'Rewrite a note',file:'File a note',trash:'Move a note to trash',rule:'Add a rule',type:'Add a type',label:'Add a label',split:'Split a note'};
+function propHTML(it){
+  const src=id=>{ const n=noteById(id); return '<div class="psrc">'+(n?esc(clip(n.text,110)):'(missing note)')+'</div>'; };
+  let b='';
+  if(it.kind==='combine'){ b+='<div class="plab">From '+plural(propIds(it).length,'note','notes')+'</div>'+propIds(it).map(src).join('')+'<div class="plab">Becomes one note</div><div class="otext">'+esc(it.text||'')+'</div><div class="plab">The others move to the trash</div>'; }
+  else if(it.kind==='edit'){ const n=noteById(it.note), d=diffWords(n?n.text:'',String(it.text||'')); b+='<div class="plab">Now</div><div class="otext">'+d.a+'</div><div class="plab">Becomes</div><div class="otext">'+d.b+'</div>'; }
+  else if(it.kind==='file'||it.kind==='trash'){ b+=src(it.note); }
+  else if(it.kind==='split'){ b+=src(it.note)+'<div class="plab">Becomes '+plural((it.parts||[]).length,'note','notes')+'</div>'+(it.parts||[]).map(t=>'<div class="otext" style="margin-bottom:6px">'+esc(t)+'</div>').join(''); }
+  else if(it.kind==='rule'){ b+='<div class="otext">If a note '+esc(ruleText({cond:it.cond,words:it.words||[]}))+', file it as '+esc(it.type||'?')+(it.label?' and add the label '+esc(it.label):'')+(it.pin?' and pin it':'')+(it.first?'. Goes first in the list.':'. Goes last in the list.')+'</div>'; }
+  else if(it.kind==='type'||it.kind==='label'){ b+='<div class="otext">'+esc(it.name||'')+'</div>'; }
+  const filing=(it.kind==='rule'||it.kind==='type'||it.kind==='label')?'':propFiling(it), warn=propWarn(it), blocked=propBlocked(it);
+  return '<div class="prop"><h4>'+esc(it.title||PROP_TITLE[it.kind]||'Suggestion')+'</h4>'+(it.why?'<p class="pwhy">'+esc(it.why)+'</p>':'')+b+
+    (filing?'<div class="plab">Then</div><div class="psrc">'+esc(filing)+'</div>':'')+(warn?'<p class="pwarn">'+esc(warn)+'</p>':'')+
+    '<div class="actions">'+(blocked?'':'<button class="btn primary" data-act="prop-yes" data-id="'+esc(it.id)+'">Yes</button>')+'<button class="btn" data-act="prop-no" data-id="'+esc(it.id)+'">'+(blocked?'Dismiss':'No')+'</button></div></div>';
+}
+function applyFiling(n,it,now){
+  if(it.type){ n.type=addType(String(it.type)).id; n.typeBy='hand'; n.rule=''; }
+  if(Array.isArray(it.labels)) it.labels.forEach(name=>{ const id=addLabel(String(name)).id; if(!n.labels.includes(id)) n.labels.push(id); });
+  if(it.archived===true){ n.archived=true; n.pinned=false; } else if(it.archived===false) n.archived=false;
+  if(it.pinned===true&&!n.archived) n.pinned=true; else if(it.pinned===false) n.pinned=false;
+  n.updated=now;
+}
+function applyProp(it){
+  const now=Date.now();
+  if(it.kind==='combine'){
+    const ns=propIds(it).map(noteById), keep=ns[0];
+    ns.slice(1).forEach(n=>{ n.labels.forEach(l=>{ if(!keep.labels.includes(l)) keep.labels.push(l); }); n.trashed=true; n.pinned=false; n.updated=now; });
+    keep.text=String(it.text); keep.trashed=false; applyFiling(keep,it,now);
+  }else if(it.kind==='edit'){ const n=noteById(it.note); n.text=String(it.text); applyFiling(n,it,now); }
+  else if(it.kind==='file'){ applyFiling(noteById(it.note),it,now); }
+  else if(it.kind==='trash'){ const n=noteById(it.note); n.trashed=true; n.pinned=false; n.updated=now; }
+  else if(it.kind==='split'){
+    const n=noteById(it.note), parts=(it.parts||[]).map(String).filter(t=>t.trim()); if(!parts.length) return;
+    n.text=parts[0]; applyFiling(n,it,now);
+    parts.slice(1).forEach((t,i)=>{ const m={id:uid('n'),text:t,type:n.type,typeBy:n.typeBy,rule:n.rule,labels:n.labels.slice(),pinned:false,archived:n.archived,trashed:false,created:n.created+i+1,updated:now,src:n.src}; data.notes.push(m); });
+  }
+  else if(it.kind==='type'){ addType(String(it.name||'').trim()||'Type'); }
+  else if(it.kind==='label'){ addLabel(String(it.name||'').trim()||'Label'); }
+  else if(it.kind==='rule'){
+    const cond=Object.prototype.hasOwnProperty.call(CONDS,it.cond)?it.cond:'starts', rs=liveRules();
+    const r={id:uid('r'),cond:cond,words:(cond==='link'||cond==='checklist')?[]:parseWords((it.words||[]).join(',')),type:addType(String(it.type||'Type')).id,
+      label:it.label?addLabel(String(it.label)).id:'',pin:!!it.pin,on:true,pos:it.first?(rs.length?rs[0].pos-1:1):nextPos(data.rules),del:false,u:now};
+    data.rules.push(r);
+  }
+}
+function decideProp(id,yes){
+  const it=pendingProps().find(x=>x.id===id); if(!it) return;
+  if(yes){
+    if(propBlocked(it)) return;
+    try{ applyProp(it); }catch(e){ log('ERROR','suggestion '+id+': '+(e&&e.message)); flash('That one couldn’t be applied.'); return; }
+  }
+  data.decided[id]=yes?'y':'n'; propsChanged=true;
+  log('suggestion',(yes?'YES ':'no  ')+it.kind+' · '+(it.title||PROP_TITLE[it.kind]||'')+' · '+id);
+  save(); fillProps();
+}
+function fillProps(){
+  const list=pendingProps();
+  $('props-note').textContent=list.length?((props&&props.note?props.note+' ':'')+plural(list.length,'suggestion','suggestions')+' waiting. Nothing changes until you say yes.'):'All done. Nothing is waiting.';
+  $('props-list').innerHTML=list.map(propHTML).join('');
+  const can=list.filter(it=>!propBlocked(it)).length;
+  $('props-all').hidden=can<2; if(armEl!==$('props-all')) $('props-all').textContent='Yes to all '+can;
+  const box=$('props-check');
+  if(propsChanged&&liveOrig().length){ const lost=checkLost(); box.innerHTML='<p class="check '+(lost?'bad':'good')+'" style="margin:0 0 12px">'+(lost?plural(lost,'original has','originals have')+' text that is no longer in any note. See the Originals tab.':'Nothing lost. Every line of your originals is still in a note.')+'</p>'; }
+  else box.innerHTML='';
+}
+function openProps(){ propsChanged=false; show('sheet-props'); fillProps(); $('sheet-props').scrollTop=0; }
+onClose['sheet-props']=()=>{ draw(); if(propsChanged){ propsChanged=false; shareSend(false); } };
+$('props-done').addEventListener('click',closeSheets);
+$('props-all').addEventListener('click',e=>{
+  const list=pendingProps().filter(it=>!propBlocked(it));
+  if(!armed(e.currentTarget,'Apply all '+list.length+'? Tap again')) return;
+  list.forEach(it=>{ try{ applyProp(it); data.decided[it.id]='y'; log('suggestion','YES '+it.kind+' · '+(it.title||'')+' · '+it.id); }catch(err){ log('ERROR','suggestion '+it.id+': '+(err&&err.message)); } });
+  propsChanged=true; save(); fillProps();
+});
+$('share-send').addEventListener('click',()=>shareSend(true));
+$('share-check').addEventListener('click',()=>propsCheck(true));
 
 /* ---- import from Google Keep (a Google Takeout .zip, or its .json files) ----
    Each Keep note becomes one note here: title on the first line, then the text
@@ -1885,6 +2065,7 @@ function normalize(d){
     labels:arr(d.labels).filter(l=>l&&l.id).map(l=>({id:String(l.id),name:String(l.name||'Label'),del:!!l.del,u:+l.u||0})),
     originals:arr(d.originals).filter(o=>o&&o.id).map(o=>({id:String(o.id),text:o.text==null?'':String(o.text),labels:arr(o.labels).map(String),
       created:+o.created||0,at:+o.at||0,ok:!!o.ok,del:!!o.del,u:+o.u||0})),
+    decided:(()=>{ const o={}; if(d.decided&&typeof d.decided==='object') Object.keys(d.decided).forEach(k=>{ o[k]=d.decided[k]==='n'?'n':'y'; }); return o; })(),
     gone:gone
   };
 }
@@ -1902,18 +2083,19 @@ function mergeStates(a,b){
   return {
     notes:byId(a.notes,b.notes,'updated').filter(n=>!(gone[n.id]&&n.updated<=gone[n.id])),
     types:byId(a.types,b.types,'u'), rules:byId(a.rules,b.rules,'u'), labels:byId(a.labels,b.labels,'u'),
-    originals:byId(a.originals,b.originals,'u'), gone:gone
+    originals:byId(a.originals,b.originals,'u'),
+    decided:(()=>{ const o={}; Object.keys(b.decided).concat(Object.keys(a.decided)).sort().forEach(k=>{ o[k]=(a.decided[k]==='y'||b.decided[k]==='y')?'y':'n'; }); return o; })(), gone:gone
   };
 }
 function sig(s){
   const sorted=a=>a.slice().sort((x,y)=>x.id<y.id?-1:x.id>y.id?1:0);
   const g={}; Object.keys(s.gone).sort().forEach(k=>{ g[k]=s.gone[k]; });
-  return JSON.stringify([sorted(s.notes),sorted(s.types),sorted(s.rules),sorted(s.labels),sorted(s.originals),g]);
+  return JSON.stringify([sorted(s.notes),sorted(s.types),sorted(s.rules),sorted(s.labels),sorted(s.originals),Object.keys(s.decided).sort().map(k=>k+s.decided[k]),g]);
 }
 
 /* ---- save / load ---- */
 let rev=0, saveWarned=false;
-function snap(){ return {notes:data.notes,types:data.types,rules:data.rules,labels:data.labels,originals:data.originals,gone:data.gone,rev:rev}; }
+function snap(){ return {notes:data.notes,types:data.types,rules:data.rules,labels:data.labels,originals:data.originals,decided:data.decided,gone:data.gone,rev:rev}; }
 function applyState(d){
   if(!d||typeof d!=='object') return false;
   data=normalize(d); rev=+d.rev||0; return true;
@@ -1943,6 +2125,8 @@ async function load(){
   draw();
   logOpen();
   await ghLoad();
+  try{ const pj=JSON.parse((await STORE.get(PROPS_KEY))||'null'); if(pj&&Array.isArray(pj.items)){ props=pj; draw(); } }catch(e){}
+  if(ghTok) propsCheck(false);
   if(ghTok&&unsentCount()>40) sendLog(false,false);
   if(!encKey&&cloudRef) flash('Sync is paused until you set a passphrase in Settings.');
   const go=new URLSearchParams(location.search);          // home-screen shortcuts: ?new=1 and ?voice=1
