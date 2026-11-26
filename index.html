@@ -180,14 +180,27 @@
     border-radius:12px;padding:11px 12px;background:var(--tile);max-height:30vh;overflow:auto;}
   .otext del{background:#F6D9D0;color:#8A3B22;text-decoration:line-through;border-radius:3px;}
   .otext ins{background:#D5EBDD;color:#1F6B46;text-decoration:underline;border-radius:3px;}
-  .prop{border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px;background:var(--surface);}
-  .prop h4{margin:0 0 3px;font-size:15.5px;font-weight:600;}
-  .prop .pwhy{margin:0 0 9px;font-size:14px;color:var(--soft);}
-  .prop .plab{font-size:12.5px;font-weight:600;color:var(--soft);margin:9px 2px 4px;}
-  .prop .otext{max-height:22vh;font-size:14.5px;}
-  .prop .psrc{font-size:14px;color:var(--soft);padding:2px 0 2px 10px;border-left:2px solid var(--line);margin:3px 0;}
-  .prop .pwarn{font-size:13.5px;color:#8A3B22;margin:8px 0 0;}
-  .prop .actions{margin-top:11px;}
+  .prop{border:1px solid var(--line);border-radius:16px;padding:14px;margin-bottom:12px;background:var(--surface);}
+  .prop h4{margin:0 0 10px;font-size:16.5px;font-weight:600;line-height:1.5;letter-spacing:-.01em;}
+  .prop h4 .chip{font-size:14px;padding:3px 9px;vertical-align:1px;}
+  .prop .pnew{font-size:12px;font-weight:500;color:var(--soft);margin-left:6px;}
+  .prop .pwhy{margin:-4px 0 10px;font-size:14.5px;color:var(--soft);}
+  .prop .pnote{white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.5;background:var(--tile);border-radius:12px;
+    padding:11px 12px;margin-bottom:8px;max-height:34vh;overflow:auto;}
+  .prop .pnote del{background:#F6D9D0;color:#8A3B22;text-decoration:line-through;border-radius:3px;}
+  .prop .pnote ins{background:#D5EBDD;color:#1F6B46;text-decoration:underline;border-radius:3px;}
+  .prop .pk{display:flex;gap:11px;align-items:flex-start;background:var(--tile);border-radius:12px;padding:11px 12px;margin-bottom:6px;cursor:pointer;}
+  .prop .pk span{flex:1;min-width:0;white-space:pre-wrap;overflow-wrap:anywhere;font-size:15px;line-height:1.5;}
+  .prop .pk input{appearance:none;-webkit-appearance:none;display:grid;place-items:center;flex:none;width:22px;height:22px;margin:1px 0 0;
+    border:1.5px solid var(--soft);border-radius:7px;background:var(--surface);cursor:pointer;}
+  .prop .pk input:checked{background:var(--ink);border-color:var(--ink);}
+  .prop .pk input:checked::after{content:'';width:11px;height:6px;margin-top:-2px;border-left:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(-45deg);}
+  .prop .pk:has(input:not(:checked)) span{color:var(--soft);text-decoration:line-through;}
+  .prop details{margin:2px 0 8px;} .prop summary{font-size:14px;font-weight:500;color:var(--accent);padding:6px 2px;cursor:pointer;}
+  .prop .pfine{margin:4px 2px 8px;font-size:13.5px;color:var(--soft);}
+  .prop .pwarn{font-size:13.5px;color:#8A3B22;margin:2px 2px 8px;}
+  .prop .pbtn{display:flex;gap:8px;margin-top:10px;}
+  .prop .pbtn .btn{flex:1;padding:10px 8px;font-size:15px;}
   .check{margin:14px 2px 0;padding:10px 12px;border-radius:12px;font-size:14.5px;font-weight:500;border:1px solid var(--line);}
   .check.good{background:#E3F0E8;border-color:#BCDCC8;color:#1F6B46;}
   .check.bad{background:#F8E6DF;border-color:#EBC4B5;color:#8A3B22;}
@@ -373,11 +386,11 @@
 <!-- suggestions from Claude, approved one by one -->
 <div class="sheet" id="sheet-props" role="dialog" aria-modal="true" aria-label="Suggestions">
   <div class="grab"></div>
-  <h3>Claude’s suggestions</h3>
+  <h3>Suggested changes</h3>
   <p id="props-note"></p>
   <div id="props-check"></div>
+  <div class="stack" style="margin-bottom:12px"><button class="btn" id="props-all">Yes to everything</button></div>
   <div id="props-list"></div>
-  <div class="stack" style="margin-top:6px"><button class="btn" id="props-all">Yes to all</button></div>
   <button class="btn primary wide" id="props-done">Done</button>
 </div>
 
@@ -528,7 +541,7 @@
   <div class="lab">Links</div>
   <div class="stack" id="links"></div>
 
-  <p class="buildstamp" id="build">Build 9</p>
+  <p class="buildstamp" id="build">Build 10</p>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
@@ -541,7 +554,7 @@ const APP={
   title:   'Notes',               // shown in the header
   key:     'notes-v1',            // local storage key, unique per app
   dbPath:  'notes/main',          // Firebase branch, unique per app
-  build:   'Build 9 · 26 Nov 2026',
+  build:   'Build 10 · 26 Nov 2026',
   links:[                         // shown in settings
     {label:'Stored data',       url:'https://console.firebase.google.com/project/shopping-eb9b3/database/shopping-eb9b3-default-rtdb/data/~2Fnotes~2Fmain'},
     {label:'Firebase console',  url:'https://console.firebase.google.com/project/shopping-eb9b3/overview'},
@@ -1378,6 +1391,11 @@ function act(a,id,el){
     case 'props': openProps(); break;
     case 'prop-yes': decideProp(id,true); break;
     case 'prop-no': decideProp(id,false); break;
+    case 'grp-yes': case 'grp-no': {
+      const ids=id.split(' '), on={};
+      el.closest('.prop').querySelectorAll('input[data-pid]').forEach(c=>{ on[c.dataset.pid]=c.checked; });
+      ids.forEach(pid=>decideProp(pid,a==='grp-yes'&&on[pid]!==false,true));
+      fillProps(); break; }
     case 'add-rule': openRule(''); break;
     case 'edit-rule': openRule(id); break;
     case 'rule-up': moveRule(id,-1); break;
@@ -1569,13 +1587,14 @@ const PROPS_KEY=APP.key+'-props';
 let props=null, propsChanged=false;
 const ghApi=path=>'https://api.github.com/repos/'+ghRepo+'/contents/'+path;
 const sharePath=name=>GH_FOLDER+'/share/'+name;
-async function ghPutFile(path,text,msg){
+async function ghPutFile(path,text,msg,again){
   const head={Authorization:'Bearer '+ghTok,Accept:'application/vnd.github+json'};
   let sha;
   const g=await fetch(ghApi(path),{headers:head,cache:'no-store'});
   if(g.ok) sha=(await g.json()).sha; else if(g.status!==404) throw new Error(g.status===401?'the token was refused':'GitHub answered '+g.status);
   const body={message:msg,content:b64(text)}; if(sha) body.sha=sha;
   const r=await fetch(ghApi(path),{method:'PUT',headers:head,body:JSON.stringify(body)});
+  if(r.status===409&&!again) return ghPutFile(path,text,msg,true);          // someone else wrote it a moment ago: fetch the new version and retry once
   if(!r.ok) throw new Error(r.status===401?'the token was refused':'GitHub answered '+r.status);
 }
 function shareDoc(){
@@ -1626,28 +1645,66 @@ function propWarn(it){
   return '';
 }
 const propBlocked=it=>propIds(it).some(id=>!noteById(id))||(it.kind==='combine'&&propIds(it).length<2)||((it.kind==='combine'||it.kind==='edit')&&!String(it.text||'').trim());
-function propFiling(it){
-  const bits=[];
-  if(it.type) bits.push('file as '+it.type);
-  if(Array.isArray(it.labels)&&it.labels.length) bits.push('label '+it.labels.join(', '));
-  if(it.pinned===true) bits.push('pin'); if(it.archived===true) bits.push('archive'); if(it.archived===false) bits.push('unarchive');
-  return bits.join(' · ');
+/* One line saying what a suggestion does, in plain words: "File as [Quote]", "Combine 3 notes into one". */
+function typeChip(name){
+  const t=liveTypes().find(x=>lc(x.name)===lc(name));
+  return t?chipHTML(t):'<span class="chip">'+esc(name)+'</span><span class="pnew">new</span>';
 }
-const PROP_TITLE={combine:'Combine notes',edit:'Rewrite a note',file:'File a note',trash:'Move a note to trash',rule:'Add a rule',type:'Add a type',label:'Add a label',split:'Split a note'};
-function propHTML(it){
-  const src=id=>{ const n=noteById(id); return '<div class="psrc">'+(n?esc(clip(n.text,110)):'(missing note)')+'</div>'; };
+function propExtras(it){
+  const bits=[];
+  if(Array.isArray(it.labels)&&it.labels.length) bits.push('label it '+it.labels.map(esc).join(', '));
+  if(it.pinned===true) bits.push('pin it'); if(it.archived===true) bits.push('archive it'); if(it.archived===false) bits.push('take it out of the archive');
+  return bits;
+}
+function propAction(it,count){
+  const many=count>1, x=propExtras(it), file=it.type?'file '+(many?'them':'it')+' as '+typeChip(it.type):'';
+  const tail=parts=>{ parts=parts.filter(Boolean); return parts.length?' and '+parts.join(', '):''; };
+  const cap=t=>t.charAt(0).toUpperCase()+t.slice(1);
+  if(it.kind==='file'){ const all=[it.type?'file '+(many?count+' notes':'')+' as '+typeChip(it.type):''].concat(many?x.map(t=>t.replace(/ it/g,' them')):x).filter(Boolean); return cap((all.join(', ')||'no change').replace('file  as','file as')); }
+  if(it.kind==='edit') return (Array.isArray(it.drops)&&it.drops.length?'Remove the header':'Reword this note')+tail([file].concat(x));
+  if(it.kind==='combine') return 'Combine '+propIds(it).length+' notes into one'+tail([file].concat(x));
+  if(it.kind==='trash') return 'Move to the trash';
+  if(it.kind==='split') return 'Split into '+(it.parts||[]).length+' notes'+tail([file]);
+  if(it.kind==='rule') return 'Add a rule';
+  if(it.kind==='type') return 'Add a type';
+  if(it.kind==='label') return 'Add a label';
+  return 'Suggestion';
+}
+/* One box showing a rewrite: what goes is struck through, what is new is underlined. */
+function diffInline(a,b){
+  const A=a.split(/(\s+)/).filter(x=>x!==''), B=b.split(/(\s+)/).filter(x=>x!=='');
+  if(A.length*B.length>6000000) return '<del>'+esc(a)+'</del>\n<ins>'+esc(b)+'</ins>';
+  const n=A.length, m=B.length, W=m+1, L=new Uint16Array((n+1)*W);
+  for(let i=n-1;i>=0;i--) for(let j=m-1;j>=0;j--) L[i*W+j]=A[i]===B[j]?L[(i+1)*W+j+1]+1:Math.max(L[(i+1)*W+j],L[i*W+j+1]);
+  let i=0, j=0, h=''; const real=t=>/\S/.test(t);
+  while(i<n||j<m){
+    if(i<n&&j<m&&A[i]===B[j]){ h+=esc(A[i]); i++; j++; }
+    else if(j>=m||(i<n&&L[(i+1)*W+j]>=L[i*W+j+1])){ h+=real(A[i])?'<del>'+esc(A[i])+'</del>':(/\n/.test(A[i])?'\n':' '); i++; }
+    else{ h+=real(B[j])?'<ins>'+esc(B[j])+'</ins>':esc(B[j]); j++; }
+  }
+  return h.replace(/^\s+/,'');
+}
+const noteBox=id=>{ const n=noteById(id); return '<div class="pnote">'+(n?esc(n.text):'This note no longer exists.')+'</div>'; };
+const fileSig=it=>it.kind==='file'&&!it.why?JSON.stringify([it.type||'',it.labels||[],it.pinned,it.archived]):'';
+/* Suggestions that do the same thing to different notes are shown as one card with a tick per note. */
+function propGroups(list){
+  const out=[];
+  list.forEach(it=>{ const k=propBlocked(it)?'':fileSig(it), last=out[out.length-1]; if(k&&last&&last.sig===k) last.items.push(it); else out.push({sig:k,items:[it]}); });
+  return out;
+}
+function propCardHTML(g){
+  const it=g.items[0], many=g.items.length>1, blocked=propBlocked(it), warn=many?'':propWarn(it);
   let b='';
-  if(it.kind==='combine'){ b+='<div class="plab">From '+plural(propIds(it).length,'note','notes')+'</div>'+propIds(it).map(src).join('')+'<div class="plab">Becomes one note</div><div class="otext">'+esc(it.text||'')+'</div><div class="plab">The others move to the trash</div>'; }
-  else if(it.kind==='edit'){ const n=noteById(it.note), d=diffWords(n?n.text:'',String(it.text||'')); b+='<div class="plab">Now</div><div class="otext">'+d.a+'</div><div class="plab">Becomes</div><div class="otext">'+d.b+'</div>'; }
-  else if(it.kind==='file'||it.kind==='trash'){ b+=src(it.note); }
-  else if(it.kind==='split'){ b+=src(it.note)+'<div class="plab">Becomes '+plural((it.parts||[]).length,'note','notes')+'</div>'+(it.parts||[]).map(t=>'<div class="otext" style="margin-bottom:6px">'+esc(t)+'</div>').join(''); }
-  else if(it.kind==='rule'){ b+='<div class="otext">If a note '+esc(ruleText({cond:it.cond,words:it.words||[]}))+', file it as '+esc(it.type||'?')+(it.label?' and add the label '+esc(it.label):'')+(it.pin?' and pin it':'')+(it.first?'. Goes first in the list.':'. Goes last in the list.')+'</div>'; }
-  else if(it.kind==='type'||it.kind==='label'){ b+='<div class="otext">'+esc(it.name||'')+'</div>'; }
-  if(Array.isArray(it.drops)&&it.drops.length) b+='<div class="plab">Dropped on purpose</div>'+it.drops.map(t=>'<div class="psrc">'+esc(t)+'</div>').join('');
-  const filing=(it.kind==='rule'||it.kind==='type'||it.kind==='label')?'':propFiling(it), warn=propWarn(it), blocked=propBlocked(it);
-  return '<div class="prop"><h4>'+esc(it.title||PROP_TITLE[it.kind]||'Suggestion')+'</h4>'+(it.why?'<p class="pwhy">'+esc(it.why)+'</p>':'')+b+
-    (filing?'<div class="plab">Then</div><div class="psrc">'+esc(filing)+'</div>':'')+(warn?'<p class="pwarn">'+esc(warn)+'</p>':'')+
-    '<div class="actions">'+(blocked?'':'<button class="btn primary" data-act="prop-yes" data-id="'+esc(it.id)+'">Yes</button>')+'<button class="btn" data-act="prop-no" data-id="'+esc(it.id)+'">'+(blocked?'Dismiss':'No')+'</button></div></div>';
+  if(many) b=g.items.map(x=>'<label class="pk"><input type="checkbox" checked data-pid="'+esc(x.id)+'"><span>'+esc((noteById(x.note)||{text:''}).text)+'</span></label>'+(propWarn(x)?'<p class="pwarn">'+esc(propWarn(x))+'</p>':'')).join('');
+  else if(it.kind==='file'||it.kind==='trash') b=noteBox(it.note);
+  else if(it.kind==='edit'){ const n=noteById(it.note); b='<div class="pnote">'+diffInline(n?n.text:'',String(it.text||''))+'</div>'; }
+  else if(it.kind==='combine') b='<div class="pnote">'+esc(it.text||'')+'</div><details><summary>The '+propIds(it).length+' notes it comes from</summary>'+propIds(it).map(noteBox).join('')+'<p class="pfine">The first becomes the combined note. The others move to the trash.</p></details>';
+  else if(it.kind==='split') b=noteBox(it.note)+'<p class="pfine">becomes</p>'+(it.parts||[]).map(t=>'<div class="pnote">'+esc(t)+'</div>').join('');
+  else if(it.kind==='rule') b='<div class="pnote">If a note '+esc(ruleText({cond:it.cond,words:it.words||[]}))+', file it as '+typeChip(it.type||'?')+(it.label?' and label it '+esc(it.label):'')+(it.pin?' and pin it':'')+'.<br>It goes '+(it.first?'first':'last')+' in the list.</div>';
+  else if(it.kind==='type'||it.kind==='label') b='<div class="pnote">'+esc(it.name||'')+'</div>';
+  const yes=many?'<button class="btn primary" data-act="grp-yes" data-id="'+esc(g.items.map(x=>x.id).join(' '))+'">Yes to '+g.items.length+'</button>':(blocked?'':'<button class="btn primary" data-act="prop-yes" data-id="'+esc(it.id)+'">Yes</button>');
+  const no=many?'<button class="btn" data-act="grp-no" data-id="'+esc(g.items.map(x=>x.id).join(' '))+'">No to all</button>':'<button class="btn" data-act="prop-no" data-id="'+esc(it.id)+'">'+(blocked?'Dismiss':'No')+'</button>';
+  return '<div class="prop"><h4>'+propAction(it,g.items.length)+'</h4>'+(it.why&&!many?'<p class="pwhy">'+esc(it.why)+'</p>':'')+b+(warn?'<p class="pwarn">'+esc(warn)+'</p>':'')+'<div class="pbtn">'+yes+no+'</div></div>';
 }
 function applyFiling(n,it,now){
   if(it.type){ n.type=addType(String(it.type)).id; n.typeBy='hand'; n.rule=''; }
@@ -1680,24 +1737,24 @@ function applyProp(it){
     data.rules.push(r);
   }
 }
-function decideProp(id,yes){
+function decideProp(id,yes,quiet){
   const it=pendingProps().find(x=>x.id===id); if(!it) return;
   if(yes){
     if(propBlocked(it)) return;
     try{ applyProp(it); }catch(e){ log('ERROR','suggestion '+id+': '+(e&&e.message)); flash('That one couldn’t be applied.'); return; }
   }
   data.decided[id]=yes?'y':'n'; propsChanged=true;
-  log('suggestion',(yes?'YES ':'no  ')+it.kind+' · '+(it.title||PROP_TITLE[it.kind]||'')+' · '+id);
-  save(); fillProps();
+  log('suggestion',(yes?'YES ':'no  ')+it.kind+' · '+(it.title||'')+' · '+id);
+  save(); if(!quiet) fillProps();
 }
 function fillProps(){
   const list=pendingProps();
-  $('props-note').textContent=list.length?((props&&props.note?props.note+' ':'')+plural(list.length,'suggestion','suggestions')+' waiting. Nothing changes until you say yes.'):'All done. Nothing is waiting.';
-  $('props-list').innerHTML=list.map(propHTML).join('');
+  $('props-note').textContent=list.length?plural(list.length,'change','changes')+' to look at. Nothing happens until you say yes.':'All done. Nothing is waiting.';
+  $('props-list').innerHTML=propGroups(list).map(propCardHTML).join('');
   const can=list.filter(it=>!propBlocked(it)).length;
-  $('props-all').hidden=can<2; if(armEl!==$('props-all')) $('props-all').textContent='Yes to all '+can;
+  $('props-all').hidden=can<2; if(armEl!==$('props-all')) $('props-all').textContent='Yes to everything ('+can+')';
   const box=$('props-check');
-  if(propsChanged&&liveOrig().length){ const lost=checkLost(); box.innerHTML='<p class="check '+(lost?'bad':'good')+'" style="margin:0 0 12px">'+(lost?plural(lost,'original has','originals have')+' text that is no longer in any note. See the Originals tab.':'Nothing lost. Every line of your originals is still in a note.')+'</p>'; }
+  if(propsChanged&&liveOrig().length){ const lost=checkLost(); box.innerHTML='<p class="check '+(lost?'bad':'good')+'" style="margin:0 0 12px">'+(lost?plural(lost,'original has','originals have')+' text that is no longer in any note. See the Originals tab.':'Nothing lost so far.')+'</p>'; }
   else box.innerHTML='';
 }
 function openProps(){ propsChanged=false; show('sheet-props'); fillProps(); $('sheet-props').scrollTop=0; }
