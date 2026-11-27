@@ -508,6 +508,18 @@
     <input type="file" id="imp-file" accept=".json" style="display:none">
   </div>
 
+  <div class="lab">AI</div>
+  <p style="margin-bottom:9px" id="ai-state">No key saved. Nothing in the app uses AI yet.</p>
+  <div class="row">
+    <input id="ai-key" type="password" placeholder="Anthropic API key (sk-ant-…)" autocomplete="off" spellcheck="false" aria-label="Anthropic API key">
+    <button class="btn primary" id="ai-save">Save</button>
+  </div>
+  <div class="stack" style="margin-top:8px">
+    <button class="btn" id="ai-test">Test the key</button>
+    <button class="btn" id="ai-clear">Remove the key from this phone</button>
+  </div>
+  <p class="hint">Shared with the Shopping app on this phone: paste it once and both have it.</p>
+
   <div class="lab">Work with Claude</div>
   <p style="margin-bottom:9px" id="share-state">Send a readable copy of your notes to your private GitHub repo so Claude can read them in chat. Suggestions come back here for you to approve.</p>
   <div class="stack">
@@ -545,7 +557,7 @@
   <div class="lab">Links</div>
   <div class="stack" id="links"></div>
 
-  <p class="buildstamp" id="build">Build 12</p>
+  <p class="buildstamp" id="build">Build 13</p>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
@@ -558,7 +570,7 @@ const APP={
   title:   'Notes',               // shown in the header
   key:     'notes-v1',            // local storage key, unique per app
   dbPath:  'notes/main',          // Firebase branch, unique per app
-  build:   'Build 12 · 26 Nov 2026',
+  build:   'Build 13 · 27 Nov 2026',
   links:[                         // shown in settings
     {label:'Stored data',       url:'https://console.firebase.google.com/project/shopping-eb9b3/database/shopping-eb9b3-default-rtdb/data/~2Fnotes~2Fmain'},
     {label:'Firebase console',  url:'https://console.firebase.google.com/project/shopping-eb9b3/overview'},
@@ -2128,6 +2140,61 @@ async function sendLog(manual,keepalive){
 document.addEventListener('visibilitychange',()=>{ if(document.hidden&&ghTok&&unsentCount()) sendLog(false,true); });
 setInterval(()=>{ if(!document.hidden&&ghTok&&unsentCount()>=15) sendLog(false,false); },3*60*1000);
 
+/* ---------- AI: the key, and one way to ask ----------
+   Copied from the Shopping app. The key is kept the way the GitHub token is:
+   in its own slot on this device, and it is the same slot the Shopping app
+   uses, so one paste serves both apps. It is not part of the synced state, is
+   never logged, and leaves the phone only in a request to Anthropic. Nothing
+   calls askAI() yet except the test; features that want it check aiKey first
+   and work without it. */
+const AI_KEY='shop-ai-1', AI_MODEL='claude-haiku-5-5';
+let aiKey='', aiMeta={ok:0,err:''};
+async function aiLoad(){ try{ aiKey=(await STORE.get(AI_KEY))||''; }catch(e){} aiPaint(); }
+function aiPaint(){
+  if(!$('ai-state')) return;
+  $('ai-state').textContent=!aiKey?'No key saved. Nothing in the app uses AI yet.'
+    :aiMeta.err?'Key saved, but the last test failed: '+aiMeta.err
+    :aiMeta.ok?'Key saved and working (tested '+new Date(aiMeta.ok).toLocaleString([], {hour:'numeric',minute:'2-digit',day:'numeric',month:'short'})+'). Nothing in the app uses AI yet.'
+    :'Key saved, ending …'+aiKey.slice(-4)+'. Tap “Test the key” to check it works.';
+}
+async function askAI(prompt,maxTokens){
+  if(!aiKey) throw new Error('no key saved');
+  const r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',
+    headers:{'content-type':'application/json','x-api-key':aiKey,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+    body:JSON.stringify({model:AI_MODEL,max_tokens:maxTokens||200,messages:[{role:'user',content:prompt}]})});
+  let j=null; try{ j=await r.json(); }catch(e){}
+  if(!r.ok){
+    const m=(j&&j.error&&j.error.message)||'';
+    throw new Error(r.status===401?'Anthropic refused the key (wrong, or deleted)'
+      :/credit balance/i.test(m)?'the account has no credit — add some in the Anthropic console'
+      :r.status===404?'the model “'+AI_MODEL+'” isn’t available to this key'
+      :r.status===429?'too many requests, or the spending limit is reached'
+      :'Anthropic answered '+r.status+(m?': '+m.slice(0,120):''));
+  }
+  return ((j&&j.content)||[]).map(c=>c.text||'').join('').trim();
+}
+$('ai-save').addEventListener('click',async()=>{
+  const k=$('ai-key').value.trim(); $('ai-key').value='';
+  if(!k){ flash('Paste the key into the box first.'); return; }
+  aiKey=k; aiMeta={ok:0,err:''}; try{ await STORE.set(AI_KEY,k); }catch(e){}
+  log('ai-setup','key saved on this device'); aiPaint(); flash('Key saved on this phone. Testing it…'); $('ai-test').click();
+});
+$('ai-clear').addEventListener('click',async()=>{
+  aiKey=''; aiMeta={ok:0,err:''}; try{ await STORE.set(AI_KEY,''); }catch(e){}
+  log('ai-setup','key removed from this device'); aiPaint(); flash('Key removed from this phone.');
+});
+$('ai-test').addEventListener('click',async()=>{
+  const b=$('ai-test'); if(b.classList.contains('busy')) return;
+  if(!aiKey){ flash('Save a key first.'); return; }
+  b.classList.add('busy'); b.textContent='Asking Anthropic…';
+  try{ const a=await askAI('Reply with the single word: ready',12);
+    aiMeta={ok:Date.now(),err:''}; log('ai-test','worked — it answered “'+a.slice(0,30)+'”'); b.textContent='Working ✓'; }
+  catch(e){ const why=/Failed to fetch|NetworkError|Load failed/i.test(e.message)?'no connection':e.message;
+    aiMeta={ok:0,err:why}; log('ai-test','FAILED: '+why); b.textContent='Not working'; }
+  b.classList.remove('busy'); aiPaint();
+  setTimeout(()=>{ b.textContent='Test the key'; },2500);
+});
+
 /* ---- shape: every saved or synced copy goes through here ---- */
 const HEX=/^#[0-9a-fA-F]{6}$/;
 const arr=v=>Array.isArray(v)?v.filter(x=>x!=null):(v&&typeof v==='object'?Object.keys(v).map(k=>v[k]).filter(x=>x!=null):[]);
@@ -2209,6 +2276,7 @@ async function load(){
   draw();
   logOpen();
   await ghLoad();
+  await aiLoad();
   try{ const pj=JSON.parse((await STORE.get(PROPS_KEY))||'null'); if(pj&&Array.isArray(pj.items)){ props=pj; draw(); } }catch(e){}
   if(ghTok) propsCheck(false);
   if(ghTok&&unsentCount()>40) sendLog(false,false);
@@ -2379,7 +2447,7 @@ function drawLinks(){
   $('logcount').textContent=actlog.length
     ? actlog.length+' of '+LOG_MAX+' entries, '+Math.round(packLog(actlog).length/1024)+' KB, on device '+devId+'.' : 'No activity recorded yet.';
 }
-$('gear').addEventListener('click',()=>{ drawLinks(); drawPrefs(); ghPaint(); paintPass(); wipeDisarm(); show('sheet-set'); $('sheet-set').scrollTop=0; });
+$('gear').addEventListener('click',()=>{ drawLinks(); drawPrefs(); ghPaint(); aiPaint(); paintPass(); wipeDisarm(); show('sheet-set'); $('sheet-set').scrollTop=0; });
 
 function download(name,text,type){
   const a=document.createElement('a');

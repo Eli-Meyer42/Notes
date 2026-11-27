@@ -107,3 +107,7 @@ note's `updated` from `notes.json`, so the app can warn if a note changed
 since. `combine` keeps the first source and moves the others to the trash.
 `type` and `labels` are names; missing ones are created. Keep the words of
 the notes when combining, so the nothing-lost check stays green.
+
+## AI key
+
+Settings → **AI** holds an Anthropic API key. It lives only in the local storage slot `shop-ai-1`, the same slot the Shopping app uses, so one paste serves both apps. It is not in the code, the synced state, the activity log, or anything sent to GitHub; it leaves the phone only in a request to `api.anthropic.com`. `askAI(prompt, maxTokens)` is the one way to ask. Nothing in Notes uses it yet; any future feature must check `aiKey` and work without one.
