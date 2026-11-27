@@ -270,6 +270,19 @@
   .sheet p.interim{margin:7px 3px 0;font-size:14.5px;}
   .lab{font-size:13.5px;font-weight:600;color:var(--soft);margin:18px 2px 7px;}
   .stack{display:flex;flex-direction:column;gap:8px;}
+  .grp{border-top:1px solid var(--hair);}
+  .grp:last-of-type{border-bottom:1px solid var(--hair);}
+  .grp>summary{list-style:none;cursor:pointer;display:flex;align-items:center;justify-content:space-between;
+    min-height:52px;font-size:16.5px;font-weight:600;}
+  .grp>summary::-webkit-details-marker{display:none;}
+  .grp>summary::after{content:'';width:8px;height:8px;border-right:2px solid var(--faint);border-bottom:2px solid var(--faint);
+    transform:rotate(45deg);margin-right:6px;transition:transform .15s;}
+  .grp[open]>summary::after{transform:rotate(225deg);}
+  .grp[open]{padding-bottom:16px;}
+  .grp .lab:first-of-type{margin-top:14px;}
+  #set-top{margin:12px 0 14px;}
+  #set-top .lab{margin:0 0 8px;}
+  .btn.busy{opacity:.55;pointer-events:none;}
   .stack .btn{width:100%;text-align:center;}
   .linkbtn{display:block;text-align:center;text-decoration:none;color:var(--ink);}
   .syncrow{display:flex;align-items:center;gap:9px;font-size:14.5px;color:var(--soft);padding:2px 2px 4px;}
@@ -483,81 +496,96 @@
   <div class="grab"></div>
   <h3>Settings</h3>
 
-  <div class="lab">Sync</div>
-  <div class="syncrow"><span class="syncdot" id="syncdot"></span><span id="syncword">Not connected</span></div>
-  <p style="margin:6px 0 9px" id="pass-state"></p>
-  <div class="row" id="pass-row">
-    <input id="pass" type="password" placeholder="Passphrase" autocomplete="off" aria-label="Passphrase">
-    <button class="btn" id="pass-set">Set passphrase</button>
-  </div>
+  <div class="syncrow" style="margin-top:2px"><span class="syncdot" id="syncdot"></span><span id="syncword">Not connected</span></div>
+  <div id="set-top"></div>
 
-  <div class="lab">Notes layout</div>
-  <div class="seg" id="seg-layout">
-    <button data-act="layout" data-id="grid">Grid</button>
-    <button data-act="layout" data-id="list">List</button>
-  </div>
+  <details class="grp"><summary>Display</summary>
+    <div class="seg" id="seg-layout">
+      <button data-act="layout" data-id="grid">Grid</button>
+      <button data-act="layout" data-id="list">List</button>
+    </div>
+  </details>
 
-  <div class="lab">Dictation</div>
-  <label class="check" style="margin-top:0"><input type="checkbox" id="pref-autovoice"><span>Save a dictated note by itself after a pause</span></label>
+  <details class="grp"><summary>Passphrase<span class="val" id="pass-val" style="margin-left:auto;margin-right:10px;font-weight:500;color:var(--soft);font-size:14.5px"></span></summary>
+    <p style="margin:0 0 9px" id="pass-state"></p>
+    <div class="row" id="pass-row">
+      <input id="pass" type="password" placeholder="Passphrase" autocomplete="off" aria-label="Passphrase">
+      <button class="btn" id="pass-set">Set passphrase</button>
+    </div>
+  </details>
 
-  <div class="lab">Backup</div>
-  <p style="margin-bottom:9px">Restoring adds back anything missing. It never removes notes.</p>
-  <div class="stack">
-    <button class="btn" id="exp">Export backup file</button>
-    <button class="btn" id="imp">Restore from backup</button>
-    <input type="file" id="imp-file" accept=".json" style="display:none">
-  </div>
+  <details class="grp"><summary>Dictation</summary>
+    <label class="check" style="margin-top:0"><input type="checkbox" id="pref-autovoice"><span>Save a dictated note by itself after a pause</span></label>
+  </details>
 
-  <div class="lab">AI</div>
-  <p style="margin-bottom:9px" id="ai-state">No key saved. Nothing in the app uses AI yet.</p>
-  <div class="row">
-    <input id="ai-key" type="password" placeholder="Anthropic API key (sk-ant-…)" autocomplete="off" spellcheck="false" aria-label="Anthropic API key">
-    <button class="btn primary" id="ai-save">Save</button>
-  </div>
-  <div class="stack" style="margin-top:8px">
-    <button class="btn" id="ai-test">Test the key</button>
-    <button class="btn" id="ai-clear">Remove the key from this phone</button>
-  </div>
-  <p class="hint">Shared with the Shopping app on this phone: paste it once and both have it.</p>
+  <details class="grp"><summary>Claude</summary>
+    <p style="margin-bottom:9px" id="share-state">Send a readable copy of your notes to your private GitHub repo so Claude can read them in chat. Suggestions come back here for you to approve.</p>
+    <div class="stack">
+      <button class="btn" id="share-send">Send notes to Claude</button>
+      <button class="btn" id="share-check">Check for suggestions</button>
+    </div>
+  </details>
 
-  <div class="lab">Work with Claude</div>
-  <p style="margin-bottom:9px" id="share-state">Send a readable copy of your notes to your private GitHub repo so Claude can read them in chat. Suggestions come back here for you to approve.</p>
-  <div class="stack">
-    <button class="btn" id="share-send">Send notes to Claude</button>
-    <button class="btn" id="share-check">Check for suggestions</button>
-  </div>
+  <details class="grp"><summary>Import</summary>
+    <p style="margin-bottom:9px" id="keep-state">Pick the .zip file from Google Takeout. Nothing is added until you confirm.</p>
+    <div class="stack">
+      <button class="btn" id="keep-pick">Choose the Takeout file</button>
+      <button class="btn primary" id="keep-go" hidden>Import</button>
+      <input type="file" id="keep-file" accept=".zip,.json,application/zip,application/json" multiple style="display:none">
+    </div>
+  </details>
 
-  <div class="lab">Import from Google Keep</div>
-  <p style="margin-bottom:9px" id="keep-state">Pick the .zip file from Google Takeout. Nothing is added until you confirm.</p>
-  <div class="stack">
-    <button class="btn" id="keep-pick">Choose the Takeout file</button>
-    <button class="btn primary" id="keep-go" hidden>Import</button>
-    <input type="file" id="keep-file" accept=".zip,.json,application/zip,application/json" multiple style="display:none">
-  </div>
+  <details class="grp"><summary>History and backups</summary>
+    <p style="margin-bottom:9px" id="ghstate">Not sending yet.</p>
+    <div class="stack">
+      <button class="btn" id="send-log">Send history now</button>
+    </div>
+    <div class="lab">GitHub connection</div>
+    <div class="row">
+      <input id="gh-token" type="password" placeholder="Paste a GitHub token" autocomplete="off" aria-label="GitHub token">
+      <button class="btn" id="gh-save">Save</button>
+    </div>
+    <p class="hint">Only needed once per device. If the Shopping app already has a token on this device, Notes uses that one.</p>
+    <div class="lab">Activity log on this phone</div>
+    <p style="margin-bottom:9px" id="logcount">No activity recorded yet.</p>
+    <div class="stack">
+      <button class="btn" id="exp-log">Export activity log</button>
+      <button class="btn" id="clr-log">Clear the log</button>
+    </div>
+    <div class="lab">Backup to a file</div>
+    <p style="margin-bottom:9px">Restoring adds back anything missing. It never removes notes.</p>
+    <div class="stack">
+      <button class="btn" id="exp">Export backup file</button>
+      <button class="btn" id="imp">Restore from backup</button>
+      <input type="file" id="imp-file" accept=".json" style="display:none">
+    </div>
+  </details>
 
-  <div class="lab">Activity log</div>
-  <p style="margin-bottom:9px" id="logcount">No activity recorded yet.</p>
-  <p style="margin-bottom:9px" id="ghstate">Not sending yet.</p>
-  <div class="stack">
-    <button class="btn" id="send-log">Send log now</button>
-    <button class="btn" id="exp-log">Export activity log</button>
-    <button class="btn" id="clr-log">Clear the log</button>
-  </div>
+  <details class="grp"><summary>AI<span class="val" id="ai-val" style="margin-left:auto;margin-right:10px;font-weight:500;color:var(--soft);font-size:14.5px"></span></summary>
+    <p style="margin-bottom:9px" id="ai-state">No key saved. Nothing in the app uses AI yet.</p>
+    <div class="row">
+      <input id="ai-key" type="password" placeholder="Anthropic API key (sk-ant-…)" autocomplete="off" spellcheck="false" aria-label="Anthropic API key">
+      <button class="btn primary" id="ai-save">Save</button>
+    </div>
+    <div class="stack" style="margin-top:9px">
+      <button class="btn" id="ai-test">Test the key</button>
+      <button class="btn" id="ai-clear">Remove the key from this phone</button>
+    </div>
+    <p class="hint" style="margin-top:9px">The key stays on this phone only, shared with the Shopping app here: paste it once and both
+      have it. It is never written into the app's code, never synced to your other devices, never sent to GitHub and never
+      put in the activity log. It is only ever sent to Anthropic.</p>
+  </details>
 
-  <div class="row" style="margin-top:8px">
-    <input id="gh-token" type="password" placeholder="Paste a GitHub token" autocomplete="off" aria-label="GitHub token">
-    <button class="btn" id="gh-save">Save</button>
-  </div>
-  <p class="hint">Only needed once per device. If the Shopping app already has a token on this device, Notes uses that one.</p>
+  <details class="grp"><summary>Start over</summary>
+    <p style="margin-bottom:9px">Wipes this app's data on every device.</p>
+    <div class="stack"><button class="btn" id="wipe">Clear everything</button></div>
+  </details>
 
-  <div class="lab">Start over</div>
-  <p style="margin-bottom:9px">Wipes this app's data on every device.</p>
-  <div class="stack"><button class="btn" id="wipe">Clear everything</button></div>
+  <details class="grp"><summary>Links</summary>
+    <div class="stack" id="links"></div>
+  </details>
 
-  <div class="lab">Links</div>
-  <div class="stack" id="links"></div>
-
-  <p class="buildstamp" id="build">Build 13</p>
+  <p class="buildstamp" id="build">Build 14</p>
 </div>
 
 <script src="https://www.gstatic.com/firebasejs/12.11.0/firebase-app-compat.js"></script>
@@ -570,7 +598,7 @@ const APP={
   title:   'Notes',               // shown in the header
   key:     'notes-v1',            // local storage key, unique per app
   dbPath:  'notes/main',          // Firebase branch, unique per app
-  build:   'Build 13 · 27 Nov 2026',
+  build:   'Build 14 · 27 Nov 2026',
   links:[                         // shown in settings
     {label:'Stored data',       url:'https://console.firebase.google.com/project/shopping-eb9b3/database/shopping-eb9b3-default-rtdb/data/~2Fnotes~2Fmain'},
     {label:'Firebase console',  url:'https://console.firebase.google.com/project/shopping-eb9b3/overview'},
@@ -1647,7 +1675,7 @@ function shareDoc(){
 }
 function sharePaint(msg){ const el=$('share-state'); if(el&&msg) el.textContent=msg; }
 async function shareSend(manual){
-  if(!ghTok){ if(manual) flash('This needs the GitHub token. Paste one under Activity log.'); return false; }
+  if(!ghTok){ if(manual) flash('This needs the GitHub token. Paste one under History and backups.'); return false; }
   if(manual) sharePaint('Sending…');
   try{
     const doc=shareDoc();
@@ -1660,7 +1688,7 @@ async function shareSend(manual){
 }
 const pendingProps=()=>(props&&Array.isArray(props.items))?props.items.filter(i=>i&&i.id&&i.kind&&!data.decided[i.id]):[];
 async function propsCheck(manual){
-  if(!ghTok){ if(manual) flash('This needs the GitHub token. Paste one under Activity log.'); return; }
+  if(!ghTok){ if(manual) flash('This needs the GitHub token. Paste one under History and backups.'); return; }
   try{
     const r=await fetch(ghApi(sharePath('proposals.json')),{headers:{Authorization:'Bearer '+ghTok,Accept:'application/vnd.github.raw+json'},cache:'no-store'});
     if(r.status===404){ if(manual) flash('No suggestions yet.'); return; }
@@ -1802,8 +1830,8 @@ $('props-all').addEventListener('click',e=>{
   list.forEach(it=>{ try{ applyProp(it); data.decided[it.id]='y'; log('suggestion','YES '+it.kind+' · '+(it.title||'')+' · '+it.id); }catch(err){ log('ERROR','suggestion '+it.id+': '+(err&&err.message)); } });
   propsChanged=true; save(); fillProps();
 });
-$('share-send').addEventListener('click',()=>shareSend(true));
-$('share-check').addEventListener('click',()=>propsCheck(true));
+$('share-send').addEventListener('click',()=>onButton('share-send','Sending…',async()=>!ghTok?'No token saved':(await shareSend(true))?'Sent ✓':'Not sent'));
+$('share-check').addEventListener('click',()=>onButton('share-check','Checking…',async()=>{ if(!ghTok) return 'No token saved'; await propsCheck(true); return openId==='sheet-props'?'':pendingProps().length?'':'Nothing new'; }));
 
 /* ---- import from Google Keep (a Google Takeout .zip, or its .json files) ----
    Each Keep note becomes one note here: title on the first line, then the text
@@ -1991,6 +2019,9 @@ function tapLabel(el){
 }
 let lastTap=0;
 document.addEventListener('click',e=>{
+  const sm=e.target&&e.target.closest?e.target.closest('.grp>summary'):null;
+  if(sm){ const g=lastTap?'  (+'+secs(Date.now()-lastTap)+')':''; lastTap=Date.now();
+    return log('TAP','section: '+(sm.childNodes[0].textContent||'').trim()+(sm.parentNode.open?' (closing)':' (opening)')+g); }
   const el=e.target&&e.target.closest?e.target.closest('button,.note,label,input,textarea,select,a,.scrim,.chip'):null;
   const gap=lastTap?'  (+'+secs(Date.now()-lastTap)+')':''; lastTap=Date.now();
   if(!el||el.disabled) return log('TAP','background'+where()+gap);
@@ -2152,6 +2183,7 @@ let aiKey='', aiMeta={ok:0,err:''};
 async function aiLoad(){ try{ aiKey=(await STORE.get(AI_KEY))||''; }catch(e){} aiPaint(); }
 function aiPaint(){
   if(!$('ai-state')) return;
+  $('ai-val').textContent=aiKey?(aiMeta.err?'problem':'key saved'):'off';
   $('ai-state').textContent=!aiKey?'No key saved. Nothing in the app uses AI yet.'
     :aiMeta.err?'Key saved, but the last test failed: '+aiMeta.err
     :aiMeta.ok?'Key saved and working (tested '+new Date(aiMeta.ok).toLocaleString([], {hour:'numeric',minute:'2-digit',day:'numeric',month:'short'})+'). Nothing in the app uses AI yet.'
@@ -2180,8 +2212,10 @@ $('ai-save').addEventListener('click',async()=>{
   log('ai-setup','key saved on this device'); aiPaint(); flash('Key saved on this phone. Testing it…'); $('ai-test').click();
 });
 $('ai-clear').addEventListener('click',async()=>{
+  const was=aiKey, meta=aiMeta; if(!was){ flash('No key saved.'); return; }
   aiKey=''; aiMeta={ok:0,err:''}; try{ await STORE.set(AI_KEY,''); }catch(e){}
-  log('ai-setup','key removed from this device'); aiPaint(); flash('Key removed from this phone.');
+  log('ai-setup','key removed from this device'); aiPaint();
+  flash('Key removed from this phone.','Undo',async()=>{ aiKey=was; aiMeta=meta; try{ await STORE.set(AI_KEY,was); }catch(e){} log('ai-setup','key put back on this device'); aiPaint(); flash('Key put back.'); });
 });
 $('ai-test').addEventListener('click',async()=>{
   const b=$('ai-test'); if(b.classList.contains('busy')) return;
@@ -2322,7 +2356,7 @@ function cloudSay(s){
   if(s==='live'&&cloudBad) s='error';
   if((s==='live'||s==='saving')&&!encKey) s='locked';
   const label={live:'Synced',saving:'Saving…',offline:'Offline — will sync later',
-    locked:(lastRemote&&lastRemote.enc)?'Paused — enter your passphrase below to sync':'Paused — set a passphrase below to sync',
+    locked:(lastRemote&&lastRemote.enc)?'Paused — enter your passphrase below to sync':'Paused — open Passphrase below to sync',
     off:'Not connected',error:cloudBad||'Sync error'}[s]||s;
   if(label!==cloudWas){ cloudWas=label; log('sync',label); }
   if(d) d.className='syncdot '+s;
@@ -2395,7 +2429,7 @@ function cloudPush(){
 function paintPass(){
   const st=$('pass-state'); if(!st) return;
   const has=!!encKey, online=lastRemote&&lastRemote.enc;
-  $('pass-row').hidden=has;
+  $('pass-row').hidden=has; $('pass-val').textContent=has?'set':online?'locked':'not set';
   $('pass-set').textContent=online?'Unlock':'Set passphrase';
   st.textContent=has?'Notes are scrambled with your passphrase before they leave this device. This device remembers it.'
     :online?'Your notes online are scrambled. Type your passphrase once and this device can sync.'
@@ -2433,7 +2467,7 @@ function flash(m,label,fn){
   $('foot-msg').textContent=m;
   const b=$('foot-act'); flashFn=fn||null; b.hidden=!fn; b.textContent=label||'';
   $('foot').classList.add('on');
-  clearTimeout(flashT); flashT=setTimeout(()=>{ $('foot').classList.remove('on'); flashFn=null; },fn?8000:4200);
+  clearTimeout(flashT); flashT=setTimeout(()=>{ $('foot').classList.remove('on'); flashFn=null; },fn?7000:4200);
 }
 $('foot-act').addEventListener('click',()=>{ const f=flashFn; flashFn=null; clearTimeout(flashT); $('foot').classList.remove('on'); if(f) f(); });
 function drawLinks(){
@@ -2447,7 +2481,41 @@ function drawLinks(){
   $('logcount').textContent=actlog.length
     ? actlog.length+' of '+LOG_MAX+' entries, '+Math.round(packLog(actlog).length/1024)+' KB, on device '+devId+'.' : 'No activity recorded yet.';
 }
-$('gear').addEventListener('click',()=>{ drawLinks(); drawPrefs(); ghPaint(); aiPaint(); paintPass(); wipeDisarm(); show('sheet-set'); $('sheet-set').scrollTop=0; });
+/* which settings he actually presses, counted on this phone, so the top of the sheet can be those */
+const USE_KEY=APP.key+'-setuse';
+let setUse={}; try{ setUse=JSON.parse(localStorage.getItem(USE_KEY)||'{}')||{}; }catch(e){}
+$('sheet-set').addEventListener('click',e=>{
+  const b=e.target.closest('button.btn,a.btn'); if(!b||!b.id||b.closest('#set-top')||/^(gh-save|ai-save|pass-set|keep-go)$/.test(b.id)) return;
+  setUse[b.id]=(setUse[b.id]||0)+1; try{ localStorage.setItem(USE_KEY,JSON.stringify(setUse)); }catch(_){}
+},true);
+function drawSetTop(){
+  const box=$('set-top'); box.innerHTML='';
+  const ids=Object.keys(setUse).filter(id=>setUse[id]>=2&&$(id)&&id!=='wipe'&&id!=='clr-log'&&id!=='ai-clear')
+    .sort((a,b)=>setUse[b]-setUse[a]).slice(0,3);
+  if(!ids.length) return;
+  box.innerHTML='<div class="lab">Most used</div><div class="stack"></div>';
+  ids.forEach(id=>{
+    const o=$(id), b=document.createElement('button'); b.className='btn'; b.textContent=o.textContent;
+    b.setAttribute('aria-label',o.textContent.trim()+' (most used)');
+    b.addEventListener('click',()=>{ setUse[id]++; try{ localStorage.setItem(USE_KEY,JSON.stringify(setUse)); }catch(_){}
+      /* whatever the real button says while it works, this one says too */
+      const mo=new MutationObserver(()=>{ b.textContent=o.textContent; b.className=o.className; });
+      mo.observe(o,{childList:true,characterData:true,subtree:true,attributes:true}); setTimeout(()=>mo.disconnect(),6000);
+      o.click(); });
+    box.querySelector('.stack').appendChild(b);
+  });
+}
+function openSettings(){ drawLinks(); drawPrefs(); ghPaint(); aiPaint(); paintPass(); wipeDisarm(); drawSetTop();
+  document.querySelectorAll('#sheet-set details.grp').forEach(d=>{ d.open=false; }); show('sheet-set'); $('sheet-set').scrollTop=0; }
+$('gear').addEventListener('click',openSettings);
+/* a slow button answers on itself: grey while it works, then what happened, then its own label again */
+async function onButton(id,working,job){
+  const b=$(id); if(b.classList.contains('busy')) return; const label=b.textContent;
+  b.classList.add('busy'); b.textContent=working;
+  let said=''; try{ said=await job(); }catch(e){ said='Didn’t work'; }
+  b.classList.remove('busy'); b.textContent=said||label;
+  setTimeout(()=>{ b.textContent=label; },2200);
+}
 
 function download(name,text,type){
   const a=document.createElement('a');
@@ -2484,7 +2552,16 @@ $('imp-file').addEventListener('change',e=>{
 });
 $('pass-set').addEventListener('click',passSet);
 $('pass').addEventListener('keydown',e=>{ if(e.key==='Enter'){ e.preventDefault(); passSet(); } });
-$('send-log').addEventListener('click',()=>sendLog(true,false));
+$('send-log').addEventListener('click',async()=>{
+  const b=$('send-log'); if(b.classList.contains('busy')) return;
+  const was=ghMeta.n, had=unsentCount();
+  b.classList.add('busy'); b.textContent='Sending…';
+  try{ await sendLog(true,false); }catch(e){}
+  for(let i=0;i<40&&ghBusy;i++) await new Promise(r=>setTimeout(r,250));      // a long log goes in several pieces
+  b.classList.remove('busy');
+  b.textContent=!ghTok?'No token saved':ghMeta.n>was?'Sent ✓  ('+(ghMeta.n-was)+(ghMeta.n-was===1?' entry)':' entries)'):!had?'Nothing new to send':'Not sent — will retry';
+  setTimeout(()=>{ b.textContent='Send history now'; },2200);
+});
 $('gh-save').addEventListener('click',async()=>{
   const t=$('gh-token').value.trim(); $('gh-token').value='';
   if(!t){ flash('Paste the token into the box first.'); return; }
@@ -2498,8 +2575,9 @@ $('exp-log').addEventListener('click',()=>{
   flash('Log exported — '+actlog.length+' entries.');
 });
 $('clr-log').addEventListener('click',()=>{
+  const was=actlog, base=logBase;
   logBase+=actlog.length; actlog=[]; flushLog();
-  drawLinks(); flash('Activity log cleared.');
+  drawLinks(); flash('Activity log cleared.','Undo',()=>{ actlog=was.concat(actlog); logBase=base; flushLog(); drawLinks(); ghPaint(); flash('Log put back.'); });
 });
 
 let wipeArmed=false, wipeT;
@@ -2509,7 +2587,7 @@ $('wipe').addEventListener('click',()=>{
   if(!wipeArmed){ wipeArmed=true; const b=$('wipe');
     b.classList.add('arm'); b.textContent='Erase all data? Tap again';
     clearTimeout(wipeT); wipeT=setTimeout(wipeDisarm,5000); return; }
-  const now=Date.now(), fresh=seedState(now);
+  const now=Date.now(), fresh=seedState(now), before=JSON.parse(JSON.stringify(data));
   data.notes.forEach(n=>{ data.gone[n.id]=now; });           // mark every note deleted so no device brings it back
   data.notes=[];
   data.originals.forEach(o=>{ o.del=true; o.text=''; o.labels=[]; o.u=now; });
@@ -2518,7 +2596,12 @@ $('wipe').addEventListener('click',()=>{
     fresh[k].forEach(x=>{ const i=data[k].findIndex(y=>y.id===x.id); if(i>=0) data[k][i]=x; else data[k].push(x); });
   });
   ui.tab='all'; ui.label=''; ui.q=''; $('q').value=''; ui.searching=false; setDraft('');
-  wipeDisarm(); draw(); save(); closeSheets(); log('wipe','all data cleared'); flash('Everything cleared.');
+  wipeDisarm(); draw(); save(); closeSheets(); log('wipe','all data cleared');
+  flash('Everything cleared.','Undo',()=>{ const t=Date.now()+1;            // newer than the wipe, so every device takes it back too
+    before.notes.forEach(n=>{ n.updated=t; }); ['types','rules','labels','originals'].forEach(k=>before[k].forEach(x=>{ x.u=t; }));
+    ['types','rules','labels','originals'].forEach(k=>{ data[k].forEach(x=>{ if(!before[k].some(y=>y.id===x.id)){ x.del=true; x.u=t; before[k].push(x); } }); });
+    before.gone=data.gone; before.decided=Object.assign({},data.decided,before.decided);
+    data=normalize(before); draw(); save(); log('wipe','undone: everything put back'); flash('Everything is back.'); });
 });
 
 if('serviceWorker' in navigator){

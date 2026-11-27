@@ -111,3 +111,7 @@ the notes when combining, so the nothing-lost check stays green.
 ## AI key
 
 Settings → **AI** holds an Anthropic API key. It lives only in the local storage slot `shop-ai-1`, the same slot the Shopping app uses, so one paste serves both apps. It is not in the code, the synced state, the activity log, or anything sent to GitHub; it leaves the phone only in a request to `api.anthropic.com`. `askAI(prompt, maxTokens)` is the one way to ask. Nothing in Notes uses it yet; any future feature must check `aiKey` and work without one.
+
+## Settings layout
+
+Same shape as the Shopping app: sync status on top, then **Most used** (up to three buttons pressed at least twice, counted in `notes-v1-setuse` on the device, never the destructive ones), then folded groups that are all closed each time settings opens, then the build stamp. Slow buttons answer on themselves (`.busy`, then the result, then the label again). Anything that removes something offers Undo in the toast. Taps on a group are logged as `section: <name> (opening)`.
